@@ -20,7 +20,8 @@
 """
 
 from itertools import cycle
-
+import re
+from astropy.time import Time
 from numpy import nan
 
 from gwpy.timeseries import (TimeSeries, TimeSeriesDict)
@@ -147,6 +148,12 @@ class TimeSeriesMonitor(DataMonitor):
                 line.set_ydata(ts.value)
 
         # format figure
+        if 'suptitle' not in self.params['init']:
+            prefix = ('Update interval: {0} -- '.format(self.interval))
+            utc = re.sub('\.0+', '',
+                         Time(self.epoch, format='gps', scale='utc').iso)
+            suffix = 'Last updated: %s UTC (%s)' % (utc, self.epoch)
+            self.suptitle = self._fig.suptitle(prefix + suffix)
         if 'ylim' not in self.params['refresh']:
             for ax in self._fig.get_axes(self.AXES_CLASS.name):
                 ax.relim()

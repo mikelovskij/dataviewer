@@ -286,7 +286,7 @@ class SpectrogramMonitor(TimeSeriesMonitor):
 
         self.logger.debug('Figure data updated')
         # add suptitle
-        if not 'suptitle' in self.params['init']:
+        if 'suptitle' not in self.params['init']:
             prefix = ('FFT length: %ss, Overlap: %ss, Stride: %ss -- '
                       % (self.fftlength, self.overlap, self.stride))
             utc = re.sub('\.0+', '',
