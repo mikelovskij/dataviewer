@@ -22,8 +22,6 @@
 import re
 from itertools import (cycle, izip_longest)
 
-import numpy
-from .inspector import ipsh
 from astropy.time import Time
 
 from gwpy.timeseries import TimeSeriesDict
@@ -62,6 +60,7 @@ class SpectrogramBuffer(DataBuffer):
         self.fftlength = self._param_dict(fftlength)
         self.overlap = self._param_dict(overlap)
         self.filter = self._param_dict(filter)
+
 
     def _param_dict(self, param):
         # format parameters
@@ -160,6 +159,7 @@ class SuperSpectrogramMonitor(TimeSeriesMonitor):
         self.fftlength = fftlength
         self.stride = stride
         self.overlap = overlap
+        self.clicks = OrderedDict()
 
         # build monitor
         kwargs.setdefault('yscale', 'log')
@@ -201,6 +201,7 @@ class SuperSpectrogramMonitor(TimeSeriesMonitor):
 
     def init_figure(self):
         self._fig = self.FIGURE_CLASS(**self.params['figure'])
+        self._fig.canvas.mpl_connect('button_press_event', self.get_time)
 
         def _new_axes():
             ax = self._fig._add_new_axes(self._fig._DefaultAxesClass.name)
@@ -210,7 +211,10 @@ class SuperSpectrogramMonitor(TimeSeriesMonitor):
         for n in range(len(self.channels)):
             _new_axes()
         # add the spectrum subplot at the end
+
         ax = self._fig._add_new_axes(SpectrumAxes.name)
+        self.set_params('init')
+        self.set_params('refresh')
         if ax.get_xscale() == 'log':
             ax.grid('on', 'both', 'x')
         if ax.get_yscale() == 'log':
@@ -218,8 +222,7 @@ class SuperSpectrogramMonitor(TimeSeriesMonitor):
 
         for ax in self._fig.get_axes(self.AXES_CLASS.name)[:-1]:
             ax.set_xlabel('')
-        self.set_params('init')
-        self.set_params('refresh')
+
         return self._fig
 
     def update_data(self, new, gap='pad', pad=0):
@@ -265,12 +268,17 @@ class SuperSpectrogramMonitor(TimeSeriesMonitor):
     def refresh(self):
         # extract data
         # replot all spectrogram
-        axes = cycle(self._fig.get_axes(self.AXES_CLASS.name))
-        spectrumaxes = self._fig.get_axes()[-1]
+
         coloraxes = self._fig.colorbars
         params = self.params['draw']
         # plot spectrograms
-        lines = [l for l in spectrumaxes.lines]
+        lines = [l for ax in self._fig.get_axes(SpectrumAxes.name)
+                 for l in ax.lines]
+        axes = cycle(self._fig.get_axes(self.AXES_CLASS.name))
+        if len(lines) == 0:
+
+            spectrumaxes = cycle(self._fig.get_axes(SpectrumAxes.name))
+            sax = next(spectrumaxes)
         for i, channel in enumerate(self.data):
             ax = next(axes)
             if len(ax.collections):
@@ -282,7 +290,7 @@ class SuperSpectrogramMonitor(TimeSeriesMonitor):
                 new = self.data[channel]
             # plot new data
             label = (hasattr(channel, 'label') and channel.label or
-                     channel.texname)
+                     channel.name)
             pparams = {}
             for key in params:
                 try:
@@ -291,12 +299,16 @@ class SuperSpectrogramMonitor(TimeSeriesMonitor):
                 except IndexError:
                     pass
 
-            asd = Spectrum(new[-1].value[-1, :],
+            specepoch = self.clicks.get(ax, self.epoch)
+            specstride = self.get_stride(new, specepoch)
+
+            asd = Spectrum(specstride,
                            frequencies=new[-1].frequencies,
-                           channel=new[-1].channel,
+                          channel=new[-1].channel,
                            unit=new[-1].unit)
             if len(lines) == 0:
-                spectrumaxes.plot(asd, label=label)
+                sax.plot(asd, label=label)  # , **pparams)
+         #    check this    self.legend = sax.legend(**self.params['legend'])
             else:
                 lines[i].set_xdata(asd.frequencies.value)
                 lines[i].set_ydata(asd.value)
@@ -341,6 +353,20 @@ class SuperSpectrogramMonitor(TimeSeriesMonitor):
         self.set_params('refresh')
         self._fig.refresh()
         self.logger.debug('Figure refreshed')
+
+    def get_stride(self, data, stride_epoch):
+        for spec in data:
+            if (stride_epoch >= spec.span[0]) and\
+                    (stride_epoch <= spec.span[-1]):
+                return spec.crop(stride_epoch - self.stride, stride_epoch,
+                                 copy=True).value[-1, :]
+
+    def get_time(self, event):
+        if event.inaxes is None:
+            self.clicks.clear()
+        else:
+            self.clicks[event.inaxes] = event.xdata
+        self.refresh()  # questa cosa è malvagia
 
 
 register_monitor(SuperSpectrogramMonitor)

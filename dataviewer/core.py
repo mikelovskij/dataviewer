@@ -281,7 +281,7 @@ class Monitor(TimedAnimation):
         """
         if self.paused:
             self.paused = False
-            self.buttons['pause'].label.set_text('Resume')
+            self.buttons['pause'].label.set_text('Pause')
         else:
             self.paused = True
-            self.buttons['pause'].label.set_text('Pause')
+            self.buttons['pause'].label.set_text('Resume')

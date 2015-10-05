@@ -287,7 +287,7 @@ class SpectrumMonitor(TimeSeriesMonitor):
             for _, plotparams in self._references.iteritems():
                 spec = plotparams.pop('spectrum')
                 ax.plot(spec, **plotparams)
-                self.legend = ax.legend(**self.params['legend'])
+                self.legend = ax.legend(**self.params['legend'])  # todo: why in the cycle?
 
         if self.sep:
             for n in range(len(self.channels) + len(self.combinations)):
@@ -305,7 +305,7 @@ class SpectrumMonitor(TimeSeriesMonitor):
             if ax.get_yscale() == 'log':
                 ax.grid('on', 'both', 'y')
 
-        self._fig.add_colorbar(visible=False)
+        self._fig.add_colorbar(visible=False)  # todo:  why?
         return self._fig
 
     def update_data(self, new, gap='pad', pad=0):
