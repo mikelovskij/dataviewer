@@ -21,7 +21,7 @@
 
 import re
 from itertools import (cycle, izip_longest)
-
+from .inspector import ipsh
 from astropy.time import Time
 
 from gwpy.timeseries import TimeSeriesDict
@@ -231,8 +231,8 @@ class SuperSpectrogramMonitor(TimeSeriesMonitor):
         This method only applies a ratio, if configured
         """
         # check that the stored epoch is bigger then the first buffered data
-        if new[self.channels[0]][0].span[
-            0] > self.epoch:  # TODO: what if new is discontiguous?
+        if new[self.channels[0]][0].span[0] > self.epoch:
+          # TODO: what if new is discontiguous?
             s = ('The available data starts at gps {0} '
                  'which. is after the end of the last spectrogram(gps {1})'
                  ': a segment is missing and will be skipped!')
@@ -312,6 +312,9 @@ class SuperSpectrogramMonitor(TimeSeriesMonitor):
             else:
                 lines[i].set_xdata(asd.frequencies.value)
                 lines[i].set_ydata(asd.value)
+            # self.params['refresh']['title'].values[-1] # what if it is not set? son stufo
+            # todo: how to set the title correctly?
+            # todo (also in the bnrange and spectrogram monitors: the unit of the xaxis changes with the dimensions, is it possible to recover it from the axis object?
             for spec in new:
                 coll = ax.plot(spec, label=label, **pparams)
                 label = None
@@ -356,10 +359,11 @@ class SuperSpectrogramMonitor(TimeSeriesMonitor):
 
     def get_stride(self, data, stride_epoch):
         for spec in data:
-            if (stride_epoch >= spec.span[0]) and\
+            if (stride_epoch - self.stride >= spec.span[0]) and\
                     (stride_epoch <= spec.span[-1]):
                 return spec.crop(stride_epoch - self.stride, stride_epoch,
                                  copy=True).value[-1, :]
+        return data[-1].value[-1, :]
 
     def get_time(self, event):
         if event.inaxes is None:
