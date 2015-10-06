@@ -325,11 +325,21 @@ class BNSRangeSpectrogramMonitor(TimeSeriesMonitor):
         self.data = type(self.spectrograms.data)()
         if self.spectrograms.data:  # is this if necessary?
             for channel in self.channels:  # TODO: any way to avoid looping since there is only one channel?
-                self.data[channel] = type(self.spectrograms.data[channel])(
-                    *self.spectrograms.data[channel])
-                pickleHandle = open(pickleFile, 'w')
-                pickle.dump(self.spectrograms.data[channel], pickleHandle)
-                pickleHandle.close()
+                self.data[channel] = type(self.spectrograms.data[channel])()
+                for spec in self.spectrograms.data[channel]:
+                    ranges = []
+                    for x in spec: # TODO: am I doing this for the whole spectrogram every time?
+                        asd = (Spectrum(x.value, frequencies=spec.frequencies,
+                                        channel=spec.channel, unit=spec.unit)
+                               .crop(self.flow, self.fhigh))
+                        range_spec = inspiral_range_psd(asd ** 2)
+                        ranges.append(
+                            (range_spec * range_spec.df) ** 0.5)
+                    self.data[channel].append(type(spec).from_spectra(
+                        *ranges, epoch=spec.epoch, dt=spec.dt))
+            pickleHandle = open(pickleFile, 'w')
+            pickle.dump(self.spectrograms.data[channel], pickleHandle)
+            pickleHandle.close()
         self.epoch = self.data[self.channels[0]][-1].span[-1]
         return self.data
 
