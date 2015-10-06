@@ -28,7 +28,7 @@ import numpy
 
 from astropy.time import Time
 
-from gwpy.plotter import (SpectrumPlot, SpectrumAxes)
+from gwpy.plotter import (SpectrumPlot, SpectrumAxes, rcParams)
 from gwpy.spectrum.core import Spectrum
 
 from . import version

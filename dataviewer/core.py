@@ -48,17 +48,16 @@ BTN_HEIGHT = 0.05
 # fixed parameters
 PARAMS = {}
 PARAMS['figure'] = ['figsize']
-PARAMS['init'] = ['subtitle', 'xlabel', 'ylabel', 'xscale', 'yscale',
+PARAMS['init'] = ['title', 'subtitle', 'xlabel', 'ylabel', 'xscale', 'yscale',
                   'suptitle']
 PARAMS['draw'] = ['marker', 'linestyle', 'linewidth', 'linesize', 'markersize',
                   'color', 'alpha', 'norm', 'vmin', 'vmax', 'cmap']
-PARAMS['refresh'] = ['xlim', 'ylim', 'title']
+PARAMS['refresh'] = ['xlim', 'ylim']
 PARAMS['legend'] = ['bbox_to_anchor', 'loc', 'borderaxespad', 'ncol']
 PARAMS['colorbar'] = ['log', 'clim', 'label']
 
-FIGURE_PARAMS = []
-AXES_PARAMS = ['xlim', 'ylim', 'xlabel', 'ylabel', 'xscale', 'yscale', 'title',
-               'subtitle']
+FIGURE_PARAMS = ['title', 'subtitle']
+AXES_PARAMS = ['xlim', 'ylim', 'xlabel', 'ylabel']
 
 
 
@@ -250,8 +249,7 @@ class Monitor(TimedAnimation):
                         isinstance(val[0], (list, tuple, basestring))):
                     val = [val] * len(self._fig.axes)
                 for ax, v in zip(self._fig.axes, val):
-                    if not(isinstance(v, basestring) and v in ''):
-                        getattr(ax, 'set_%s' % key)(v)
+                    getattr(ax, 'set_%s' % key)(v)
             else:
                 for ax in self._fig.axes:
                     getattr(ax, 'set_%s' % key)(val)
@@ -282,7 +280,7 @@ class Monitor(TimedAnimation):
         """
         if self.paused:
             self.paused = False
-            self.buttons['pause'].label.set_text('Pause')
+            self.buttons['pause'].label.set_text('Resume')
         else:
             self.paused = True
-            self.buttons['pause'].label.set_text('Resume')
+            self.buttons['pause'].label.set_text('Pause')
