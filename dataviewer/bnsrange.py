@@ -28,7 +28,6 @@ from astropy.time import Time
 from gwpy.timeseries import (TimeSeries, TimeSeriesDict)
 from gwpy.spectrogram import (Spectrogram, SpectrogramList)
 from gwpy.plotter import (SpectrogramPlot, TimeSeriesAxes)
-from gwpy.spectrum import Spectrum
 from gwpy.astro.range import inspiral_range_psd
 
 import pickle
