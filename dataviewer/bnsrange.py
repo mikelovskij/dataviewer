@@ -30,7 +30,7 @@ from gwpy.spectrogram import (Spectrogram, SpectrogramList)
 from gwpy.plotter import (SpectrogramPlot, TimeSeriesAxes)
 from gwpy.astro.range import inspiral_range_psd
 
-import pickle
+import cPickle
 
 from . import version
 from .buffer import (OrderedDict, DataBuffer)
@@ -170,6 +170,7 @@ class BNSRangeSpectrogramMonitor(TimeSeriesMonitor):
         kwargs.setdefault('interval', stride)
         flow = kwargs.pop('flow')
         fhigh = kwargs.pop('fhigh')
+        picklefile = kwargs.pop('picklefile', None)
         if kwargs['interval'] % stride:
             raise ValueError("%s interval must be exact multiple of the stride"
                              % type(self).__name__)
@@ -183,9 +184,11 @@ class BNSRangeSpectrogramMonitor(TimeSeriesMonitor):
                                                 filter))
         else:
             self.spectrograms.filter = filter
+        self.picklefile = picklefile
         self.fftlength = fftlength
         self.stride = stride
         self.overlap = overlap
+        self.olepoch = None
         self.duration = kwargs['duration']
 
         # build monitor
@@ -195,18 +198,18 @@ class BNSRangeSpectrogramMonitor(TimeSeriesMonitor):
         if isinstance(self.plots, str):
             self.plots = (self.plots,)
         # define state vector
-        self.stateChannel = kwargs.pop('statechannel', [])
-        if isinstance(self.stateChannel, str):
-            self.stateChannel = (self.stateChannel,)
-        if len(self.stateChannel) == 1:
-            stateDQ = caget(self.stateChannel[0])  # is this performed only one time?
-        elif len(self.stateChannel) == 2:
-            stateChannels = self.stateChannel[0].split(",")
-            stateCondition = self.stateChannel[1].split(",")
-            for i, lockChanls in enumerate(stateChannels):
+        self.statechannel = kwargs.pop('statechannel', [])
+        if isinstance(self.statechannel, str):
+            self.statechannel = (self.statechannel,)
+        if len(self.statechannel) == 1:
+            stateDQ = caget(self.statechannel[0])
+        elif len(self.statechannel) == 2:
+            statechannels = self.statechannel[0].split(",")
+            statecondition = self.statechannel[1].split(",")
+            for i, lockchanls in enumerate(statechannels):
                 stateDQ = stateDQ and eval(
-                    str(caget(lockChanls)) + stateCondition[i])
-        elif len(self.stateChannel) > 2:
+                    str(caget(lockchanls)) + statecondition[i])
+        elif len(self.statechannel) > 2:
             raise UserException("Unknown state channels/ conditions")
 
         super(BNSRangeSpectrogramMonitor, self).__init__(*channels,
@@ -251,7 +254,6 @@ class BNSRangeSpectrogramMonitor(TimeSeriesMonitor):
 
         def _new_axes():
             ax = self._fig._add_new_axes(self._fig._DefaultAxesClass.name)
-            #                                       sharex=sharex)
             ax.set_epoch(float(self.epoch))
             ax.set_xlim(float(self.epoch - self.duration), float(self.epoch))
             return ax
@@ -264,11 +266,11 @@ class BNSRangeSpectrogramMonitor(TimeSeriesMonitor):
         for ax in self._fig.get_axes(self.AXES_CLASS.name)[:-1]:
             ax.set_xlabel('')
         for i, ax in enumerate(self._fig.get_axes(self.AXES_CLASS.name)):
-            if isinstance(yscale, str):
-                yscalePlot = yscale
+            if isinstance(yscale, str):  # todo: check not implemented in core?
+                yscaleplot = yscale
             else:
-                yscalePlot = yscale[i]
-            ax.set_yscale(yscalePlot)
+                yscaleplot = yscale[i]
+            ax.set_yscale(yscaleplot)
         self.set_params('refresh')
         # ax.set_xlim(float(self.epoch - self.duration), float(self.epoch))
         return self._fig
@@ -277,7 +279,6 @@ class BNSRangeSpectrogramMonitor(TimeSeriesMonitor):
         """Update the `SpectrogramMonitor` data
         This method only applies a ratio, if configured
         """
-        pickleFile = 'rangefile'  # to store data at each step
 
         # check that the stored epoch is bigger then the first buffered data
         if new[self.channels[0]][0].span[0] > self.epoch:
@@ -291,15 +292,19 @@ class BNSRangeSpectrogramMonitor(TimeSeriesMonitor):
         if not self.spectrograms.data:
             # be sure that the first cycle is syncronized with the buffer
             self.epoch = new[self.channels[0]][0].span[0]
-            try:
-                #    load the saved spectrograms if there are any # TODO: rework this
-                pickleHandle = open(pickleFile, 'r')
-                tempSpect = pickle.load(pickleHandle)
-                pickleHandle.close()
-                self.spectrograms.data[self.channels[0]] = tempSpect
-            except:
-                pass
-
+            # TODO : use a database instead to not resave the whole specgram?
+            if self.picklefile:
+                try:
+                    #    load the saved spectrograms if there are any
+                    picklehandle = open(self.picklefile, 'r')
+                    tempspect = cPickle.load(picklehandle)
+                    picklehandle.close()
+                    self.spectrograms.data[self.channels[0]] = tempspect
+                except:
+                    self.logger.warning('Error in loading the picklefile, '
+                                        'old spectrum will not be loaded')
+                    pass
+        self.olepoch = self.epoch
         while int(new[self.channels[0]][0].span[-1]) >= int(
                         self.epoch + self.stride):
             # data buffer will return dict of 1-item lists, so reform to tsd
@@ -310,16 +315,23 @@ class BNSRangeSpectrogramMonitor(TimeSeriesMonitor):
                               .format(self.epoch))
             self.spectrograms.append(
                 self.spectrograms.from_timeseriesdict(_new))
+            self.logger.debug('New stride appended')
             self.epoch += self.stride
             self.spectrograms.crop(self.epoch - self.duration)
+            self.logger.debug('Spectrogram cropped')
         self.data = type(self.spectrograms.data)()
         if self.spectrograms.data:  # is this if necessary?
-            for channel in self.channels:  # TODO: any way to avoid looping since there is only one channel?
+            # TODO: any way to avoid looping since there is only one channel?
+            for channel in self.channels:
                 self.data[channel] = type(self.spectrograms.data[channel])(
                     *self.spectrograms.data[channel])
-                pickleHandle = open(pickleFile, 'w')
-                pickle.dump(self.spectrograms.data[channel], pickleHandle)
-                pickleHandle.close()
+                self.logger.debug('Data copied in buffer')
+                if self.picklefile:
+                    picklehandle = open(self.picklefile, 'w')
+                    cPickle.dump(self.spectrograms.data[channel], picklehandle,
+                                 cPickle.HIGHEST_PROTOCOL)
+                    picklehandle.close()
+                    self.logger.debug('Pickle saved')
         self.epoch = self.data[self.channels[0]][-1].span[-1]
         return self.data
 
@@ -338,18 +350,9 @@ class BNSRangeSpectrogramMonitor(TimeSeriesMonitor):
                 raise UserException(
                     "Only one channel is accepted for BNSrange Monitor")
 
-            # plot spectrograms
-            # newSpectrogram = self.data[channel]
-            for i, plotType in enumerate(self.plots):
+            for i, plottype in enumerate(self.plots):
                 ax = next(axes)
-                if len(ax.collections):
-                    newSpectrogram = self.data[channel][-1:]
-                    # remove old spectrogram
-                    if float(abs(
-                            newSpectrogram[-1].span)) > self.buffer.interval:
-                        ax.collections.remove(ax.collections[-1])
-                else:
-                    newSpectrogram = self.data[channel]
+
                 # plot new data
                 pparams = {}
                 for key in params:
@@ -358,21 +361,32 @@ class BNSRangeSpectrogramMonitor(TimeSeriesMonitor):
                             pparams[key] = params[key][i]
                     except IndexError:
                         pass
-                if plotType == "timeseries":
-                    for spec in newSpectrogram:
-                        rangIntegrand = spec ** 2
-                        rangeTimeseriesSquare = rangIntegrand.sum(axis=1)
-                        rangeTimeseries = TimeSeries(
-                            rangeTimeseriesSquare.value ** 0.5,
-                            epoch=rangeTimeseriesSquare.epoch,
-                            name=rangeTimeseriesSquare.name,
-                            sample_rate=1.0 / rangeTimeseriesSquare.dt.value,
-                            unit='Mpc', channel=rangeTimeseriesSquare.name)
-                        coll = ax.plot(rangeTimeseries, color='b',
+                if plottype == "timeseries":
+                    newspectrogram = self.data[channel]
+                    # todo: do these calculations only for the new data?
+                    for spec in newspectrogram:
+                        rangintegrand = spec ** 2
+                        rangesimeseriessquare = rangintegrand.sum(axis=1)
+                        rangetimeseries = TimeSeries(
+                            rangesimeseriessquare.value ** 0.5,
+                            epoch=rangesimeseriessquare.epoch,
+                            name=rangesimeseriessquare.name,
+                            sample_rate=1.0 / rangesimeseriessquare.dt.value,
+                            unit='Mpc', channel=rangesimeseriessquare.name)
+                        coll = ax.plot(rangetimeseries, color='b',
                                        linewidth=3.0, marker='o')
-                elif plotType == "spectrogram":
-                    # coll = ax.plot(newSpectrogram, label=label, **pparams)
-                    for spec in newSpectrogram:
+                elif plottype == "spectrogram":
+                    # this part allows to replot only the last spectrogram
+                    if len(ax.collections):
+                        newspectrogram = self.data[channel][-1:]
+                        # remove old spectrogram if the new one contains
+                        # the same data
+                        if float(newspectrogram[-1].span[0]) < self.olepoch:
+                            ax.collections.remove(ax.collections[-1])
+                    else:
+                        newspectrogram = self.data[channel]
+                    # coll = ax.plot(newspectrogram, label=label, **pparams)
+                    for spec in newspectrogram:
                         coll = ax.plot(spec.copy(), **pparams)
                         # the .copy() is necessary for some reason to avoid a
                         #  weird error in the .sum at line 343 that happens if
