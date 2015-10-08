@@ -400,10 +400,16 @@ class BNSRangeSpectrogramMonitor(TimeSeriesMonitor):
                         newspectrogram = self.data[channel]
                     # coll = ax.plot(newspectrogram, label=label, **pparams)
                     for spec in newspectrogram:
-                        coll = ax.plot(spec.copy(), **pparams)
                         # the .copy() is necessary for some reason to avoid a
                         #  weird error in the .sum at line 343 that happens if
                         # the spectrogram is plotted before the timeseries
+                        coll = ax.plot(spec.copy(), **pparams)
+
+                    # rescale all the colormaps to the last one plotted
+                    for co in ax.collections:
+                        co.set_clim(coll.get_clim())
+
+                    # set colorbar
                     try:
                         coloraxes[i]
                     except IndexError:
