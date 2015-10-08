@@ -19,7 +19,7 @@
 """DataMonitor for for BNS range.
 """
 
-from epics import caget
+from epics import PV
 
 import re
 from itertools import (cycle, izip_longest)
@@ -58,7 +58,8 @@ class SpectrogramBuffer(DataBuffer):
     ListClass = SpectrogramList
 
     def __init__(self, channels, stride=1, fftlength=1, overlap=0,
-                 method='welch', filter=None, fhigh=8000, flow=0, **kwargs):
+                 method='welch', filter=None, fhigh=8000, flow=0,
+                 statechannel=[], **kwargs):
         super(SpectrogramBuffer, self).__init__(channels, **kwargs)
         self.method = method
         if 'window' in kwargs:
@@ -72,6 +73,24 @@ class SpectrogramBuffer(DataBuffer):
         self.filter = self._param_dict(filter)
         self.fhigh = self._param_dict(fhigh)
         self.flow = self._param_dict(flow)
+        # define state vector
+        global stateDQ
+        self.pv = None
+        if isinstance(statechannel, str):
+            statechannel = (statechannel,)
+        if len(statechannel) == 1:
+            self.pv = PV(statechannel[0])
+            stateDQ = self.pv.get()
+        elif len(statechannel) == 2:
+            statechannels = statechannel[0].split(",")
+            statecondition = statechannel[1].split(",")
+            self.pv = OrderedDict()
+            for cond, lockchanls in zip(statecondition, statechannels):
+                pvt = PV(lockchanls)
+                self.pv[pvt] = cond
+                stateDQ = stateDQ and eval(str(pvt.get()) + cond)
+        elif len(statechannel) > 2:
+            raise UserException("Unknown state channels/ conditions")
 
     def _param_dict(self, param):
         # format parameters
@@ -100,6 +119,13 @@ class SpectrogramBuffer(DataBuffer):
 
         # calculate spectrograms only if state conditon(s) is satisfied
         data = self.DictClass()
+        global stateDQ
+        stateDQ = 1
+        if isinstance(self.pv, PV):
+            stateDQ = self.pv.get()
+        elif isinstance(self.pv, OrderedDict):
+            for pvt, cond in self.pv.iteritems():
+                stateDQ = stateDQ and eval(str(pvt.get()) + cond)
         if stateDQ:
             for channel, ts in zip(self.channels, tsd.values()):
                 spec = ts.asd(fftlength=fftlength[channel],
@@ -158,7 +184,6 @@ class BNSRangeSpectrogramMonitor(TimeSeriesMonitor):
     AXES_CLASS = TimeSeriesAxes
 
     def __init__(self, *channels, **kwargs):
-        global stateDQ
         # get FFT parameters
         stride = kwargs.pop('stride', 20)
         fftlength = kwargs.pop('fftlength', 1)
@@ -171,6 +196,7 @@ class BNSRangeSpectrogramMonitor(TimeSeriesMonitor):
         flow = kwargs.pop('flow')
         fhigh = kwargs.pop('fhigh')
         picklefile = kwargs.pop('picklefile', None)
+        statechannel = kwargs.pop('statechannel', [])
         if kwargs['interval'] % stride:
             raise ValueError("%s interval must be exact multiple of the stride"
                              % type(self).__name__)
@@ -178,7 +204,8 @@ class BNSRangeSpectrogramMonitor(TimeSeriesMonitor):
         # build 'data' as SpectrogramBuffer
         self.spectrograms = SpectrogramIterator(
             channels, stride=stride, method=method, overlap=overlap,
-            fftlength=fftlength, flow=flow, fhigh=fhigh)
+            fftlength=fftlength, flow=flow, fhigh=fhigh,
+            statechannel=statechannel)
         if isinstance(filter, list):
             self.spectrograms.filter = dict(zip(self.spectrograms.channels,
                                                 filter))
@@ -197,20 +224,6 @@ class BNSRangeSpectrogramMonitor(TimeSeriesMonitor):
         self.plots = kwargs.pop('plots')
         if isinstance(self.plots, str):
             self.plots = (self.plots,)
-        # define state vector
-        self.statechannel = kwargs.pop('statechannel', [])
-        if isinstance(self.statechannel, str):
-            self.statechannel = (self.statechannel,)
-        if len(self.statechannel) == 1:
-            stateDQ = caget(self.statechannel[0])
-        elif len(self.statechannel) == 2:
-            statechannels = self.statechannel[0].split(",")
-            statecondition = self.statechannel[1].split(",")
-            for i, lockchanls in enumerate(statechannels):
-                stateDQ = stateDQ and eval(
-                    str(caget(lockchanls)) + statecondition[i])
-        elif len(self.statechannel) > 2:
-            raise UserException("Unknown state channels/ conditions")
 
         super(BNSRangeSpectrogramMonitor, self).__init__(*channels,
                                                          **kwargs)
