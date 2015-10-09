@@ -59,7 +59,7 @@ class SpectrogramBuffer(DataBuffer):
 
     def __init__(self, channels, stride=1, fftlength=1, overlap=0,
                  method='welch', filter=None, fhigh=8000, flow=0,
-                 statechannel=[], **kwargs):
+                 statechannel=list(), **kwargs):
         super(SpectrogramBuffer, self).__init__(channels, **kwargs)
         self.method = method
         if 'window' in kwargs:
@@ -316,7 +316,6 @@ class BNSRangeSpectrogramMonitor(TimeSeriesMonitor):
                 except:
                     self.logger.warning('Error in loading the picklefile, '
                                         'old spectrum will not be loaded')
-                    pass
         self.olepoch = self.epoch
         while int(new[self.channels[0]][0].span[-1]) >= int(
                         self.epoch + self.stride):
