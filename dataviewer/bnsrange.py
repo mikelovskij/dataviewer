@@ -261,7 +261,6 @@ class BNSRangeSpectrogramMonitor(TimeSeriesMonitor):
 
     def init_figure(self):
         self._fig = self.FIGURE_CLASS(**self.params['figure'])
-        # sharex = None
         if self.params['draw']['norm'][0] == "linear":
             self.params['draw']['norm'][0] = ''
 
@@ -273,19 +272,10 @@ class BNSRangeSpectrogramMonitor(TimeSeriesMonitor):
 
         for n in range(len(self.plots)):
             _new_axes()
-            # sharex = _new_axes()
-        yscale = self.params['init'].pop('yscale')
         self.set_params('init')
         for ax in self._fig.get_axes(self.AXES_CLASS.name)[:-1]:
             ax.set_xlabel('')
-        for i, ax in enumerate(self._fig.get_axes(self.AXES_CLASS.name)):
-            if isinstance(yscale, str):  # todo: check not implemented in core?
-                yscaleplot = yscale
-            else:
-                yscaleplot = yscale[i]
-            ax.set_yscale(yscaleplot)
         self.set_params('refresh')
-        # ax.set_xlim(float(self.epoch - self.duration), float(self.epoch))
         return self._fig
 
     def update_data(self, new, gap='pad', pad=0):
