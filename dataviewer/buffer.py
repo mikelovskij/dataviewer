@@ -32,6 +32,7 @@ from gwpy.segments import (Segment, SegmentList, DataQualityFlag)
 from gwpy.time import to_gps
 from gwpy.timeseries import (TimeSeries, TimeSeriesList, TimeSeriesDict,
                              StateVector, StateVectorDict)
+from gwpy.segments import DataQualityDict
 from gwpy.spectrogram import (Spectrogram, SpectrogramList)
 
 from . import version
@@ -71,6 +72,7 @@ class BufferCore(object):
             channels = [channels]
         self.channels = ChannelList.from_names(*channels)
         self.data = self.DictClass()
+        self.s_data = self.DictClass()
         self.logger = logger
 
     def get(self, segments=None, channels=None, fetch=True, **fetchargs):
@@ -313,6 +315,81 @@ class BufferCore(object):
     @staticmethod
     def _channel_basename(channel):
         return channel.ndsname.split('/')[0]
+
+# -----------------------------------------------------------------------------
+#
+# Segment methods
+#
+# -----------------------------------------------------------------------------
+    def seg_data(self):
+        """The data quality flags held within this `DataBuffer`
+
+        This property should be overridden by all subclasses to return
+        the correct data.
+        """
+        return self._s_data
+
+    def seg_append(self, new):
+        """Append DQ segments to this `DataBuffer`
+        """
+        for key, val in new.iteritems():
+            if key not in self.s_data:
+                self.s_data[key] = self.ListClass()
+            for seg in val.active:
+                self.s_data[key].active.append(seg)
+        self.seg_coalesce()
+
+    def seg_coalesce(self):
+        """Coalesce the segment data held within this `DataBuffer`
+        """
+        for key, data in self.s_data.iteritems():
+            self.data[key].active = data.active.coalesce()
+
+    def seg_crop(self, start=None, end=None):
+        self.seg_coalesce()
+        for key, data in self.s_data.iteritems():
+            c_seg = SegmentList()
+            if end is None:
+                end = data.active[-1][-1]
+            if start is None:
+                start = data.active[0][0]
+            cropper = Segment(start, end)
+            for seg in data.active:
+                try:
+                    temp = seg & cropper
+                    c_seg.append(temp)
+                except ValueError:
+                    pass
+            data.active = c_seg
+
+    @property
+    def s_segments(self):
+        """The segments during which data have been fetched
+
+        :type: `~gwpy.segments.SegmentList`
+        """
+        try:
+            return reduce(
+                operator.or_, (flag.active for flag in self.s_data.values()))
+        except TypeError:
+            return SegmentList()
+
+    @property
+    def s_extent(self):
+        """The enclosing segment during which data have been fetched
+
+        .. warning::
+
+           Thie `extent` does not guarantee that all data in the middle
+           have been fetched, gaps may be present depending on which
+           segments were used
+
+        :type: `~gwpy.segments.Segment`
+        """
+        return Segment(*self.s_segments.extent())
+
+
+
 
 
 # -----------------------------------------------------------------------------

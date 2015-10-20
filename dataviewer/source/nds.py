@@ -279,18 +279,26 @@ class NDSDataIterator(NDSDataSource):
         """
         # get new data
         new, new_dq = self._next()
-        if not new:
+        if (not new) & (not new_dq):
             self.logger.warning('No data were received')
-            return self.data
-        epoch = new.values()[0].span[-1]
-        self.logger.debug('%d seconds of data received up to epoch %s'
+            return self.data, self. s_data
+        if new:
+            epoch = new.values()[0].span[-1]  # todo: why [0] and not [-1]?
+            self.logger.debug('%d seconds of data received up to epoch %s'
                           % (epoch - new.values()[0].span[0], epoch))
-        # record in buffer
-        ipsh()
-        self.append(new)
-        if abs(self.segments) > self.duration:
-            self.crop(start=epoch - self.duration)
-        return self.data
+            # record in buffer
+            self.append(new)
+            if abs(self.segments) > self.duration:
+                self.crop(start=epoch - self.duration)
+        if new_dq:
+            if not epoch:
+                epoch = (reduce(op.or_,
+                                (flag.active for flag in new_dq.values())))\
+                    .extent()[-1]
+            self.seg_append(new_dq)
+            if abs(self.s_segments) > self.duration:
+                self.seg_crop(start=epoch - self.duration)
+        return self.data, self.s_data
 
     def fetch(self, *args, **kwargs):
         try:
@@ -324,7 +332,8 @@ class NDSDataIterator(NDSDataSource):
         for (f, sv), cond, name, prec in zip(
                 self.svd.iteritems(), self.flags.itervalues(), cose):
             if isinstance(name, (list, tuple)):
-                dqdict.update(sv.to_dqflags(bits=name, minlen=prec))
+                dqdict.update(sv.to_dqflags(bits=name,
+                                            minlen=int(prec*sv.samplerate)))
             elif isinstance(name, basestring):
                 if cond:
                     operator, value = self.eval_condition(cond)
@@ -332,23 +341,12 @@ class NDSDataIterator(NDSDataSource):
                     operator = op.eq
                     value = True
                 sts = operator(sv, value)
-                dqdict[name] = sts.to_dqflags(name=name, minlen=prec)
+                dqdict[name] = sts.to_dqflags(name=name,
+                                              minlen=int(prec*sts.samplerate))
             else:
                 raise ValueError('Name parameter for flag {0} not valid'
                                  .format(f))
         return dqdict
-
-
-
-
-    def conditions_check(self): # should this be in buffer.py?
-        # se è già una statets skippo questo passaggio?
-        flag_dict = DataQualityDict()
-        for (f, sv), cond in zip(self.svd.iteritems(), self.flags.itervalues()):
-                operator, value = self.eval_condition(cond)
-                sts = operator(sv, value)
-                flag_dict[f] = sts.to_dqflags()
-        return flag_dict.intersection()
 
     @staticmethod
     def eval_condition(condition):
