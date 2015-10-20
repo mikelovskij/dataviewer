@@ -22,11 +22,14 @@
 
 from numpy import ceil
 from gwpy.io import nds as ndsio
-from gwpy.timeseries import (TimeSeries, TimeSeriesDict)
+from gwpy.timeseries import (TimeSeries, TimeSeriesDict, StateVector, StateVectorDict, StateTimeSeries)
+from gwpy.segments import DataQualityDict
 from fractions import gcd
 from time import sleep
 from gwpy.time import tconvert
-
+import operator as op
+from numbers import Number
+from ..inspector import ipsh
 from .. import version
 from ..log import Logger
 from . import (register_data_source, register_data_iterator)
@@ -146,12 +149,14 @@ class NDSDataIterator(NDSDataSource):
     """
     def __init__(self, channels, duration=0, interval=2, host=None,
                  port=None, connection=None, logger=Logger('nds'),
-                 gap='pad', pad=0.0, attempts=50, **kwargs):
+                 gap='pad', pad=0.0, attempts=50, flags=None, **kwargs):
         """Construct a new iterator
         """
         super(NDSDataIterator, self).__init__(channels, host=host, port=port,
                                               connection=connection,
                                               logger=logger, **kwargs)
+        self.flags = flags
+        self.svd = StateVectorDict()
 
         if self.connection.get_protocol() == 1:
             ndsstride = 1
@@ -164,7 +169,7 @@ class NDSDataIterator(NDSDataSource):
         self.gap = gap
         self.pad = pad
         self.attempts = attempts
-
+        self.flag_iterator = None
         self.start()
 
     def __iter__(self):
@@ -174,6 +179,10 @@ class NDSDataIterator(NDSDataSource):
         try:
             self.iterator = self.connection.iterate(
                 self.ndsstride, self._unique_channel_names(self.channels))
+            if self.flags:
+                self.flag_iterator = self.connection.iterate(
+                    self.ndsstride,
+                    self._unique_channel_names(self.flags.keys))
         except RuntimeError as e:
             if e.message == 'Invalid channel name':
                 self.logger.error('Invalid channel name %s' % str(
@@ -188,14 +197,18 @@ class NDSDataIterator(NDSDataSource):
         return self.start()
 
     def _next(self):
+        # why not do it in __init__?
         uchannels = self._unique_channel_names(self.channels)
+        uflags = self._unique_channel_names(self.flags.keys)
         new = TimeSeriesDict()
+        new_flags = DataQualityDict()
         span = 0
         epoch = 0
         att = 0
         self.logger.debug('Waiting for next NDS2 packet...')
         while span < self.interval:
             try:
+                f_buffers = next(self.flag_iterator)
                 buffers = next(self.iterator)
             except RuntimeError as e:
                 self.logger.error('RuntimeError caught: %s' % str(e))
@@ -215,6 +228,9 @@ class NDSDataIterator(NDSDataSource):
                         'Maximum number of attempts reached, exiting')
                     break
             att = 0
+            for f_buffer, flg in zip(f_buffers, uflags):
+                self.svd[flg] = StateVector.from_nds2_buffer(f_buffer)
+                new_flags = self.flag_converter()
             for buff, c in zip(buffers, uchannels):
                 ts = TimeSeries.from_nds2_buffer(buff)
                 try:
@@ -245,7 +261,10 @@ class NDSDataIterator(NDSDataSource):
         out = type(new)()
         for chan in self.channels:
             out[chan] = new[self._channel_basename(chan)].copy()
-        return out
+        dq_out = type(new_flags)()
+        for flag in self.flags.keys():
+            dq_out[flag] = new_flags[self._channel_basename(chan)].copy()
+        return out, dq_out
 
     def next(self):
         """Get the next data iteration
@@ -259,7 +278,7 @@ class NDSDataIterator(NDSDataSource):
            a new `TimeSeriesDict` with the concatenated, buffered data
         """
         # get new data
-        new = self._next()
+        new, new_dq = self._next()
         if not new:
             self.logger.warning('No data were received')
             return self.data
@@ -267,6 +286,7 @@ class NDSDataIterator(NDSDataSource):
         self.logger.debug('%d seconds of data received up to epoch %s'
                           % (epoch - new.values()[0].span[0], epoch))
         # record in buffer
+        ipsh()
         self.append(new)
         if abs(self.segments) > self.duration:
             self.crop(start=epoch - self.duration)
@@ -294,6 +314,59 @@ class NDSDataIterator(NDSDataSource):
         self.logger.debug(
             'The buffer has been set to store %d s of data' % self.duration)
 
+    #def to_dq_flag_dict(self):
+    #    svd = StateVectorDict()
+    #    for buff, f in zip(fag_buffers, uflags):
+    #        svd[f] = StateVector.from_nds2_buffer(buff)
+
+    def flag_converter(self):
+        dqdict = DataQualityDict()
+        for (f, sv), cond, name, prec in zip(
+                self.svd.iteritems(), self.flags.itervalues(), cose):
+            if isinstance(name, (list, tuple)):
+                dqdict.update(sv.to_dqflags(bits=name, minlen=prec))
+            elif isinstance(name, basestring):
+                if cond:
+                    operator, value = self.eval_condition(cond)
+                else:
+                    operator = op.eq
+                    value = True
+                sts = operator(sv, value)
+                dqdict[name] = sts.to_dqflags(name=name, minlen=prec)
+            else:
+                raise ValueError('Name parameter for flag {0} not valid'
+                                 .format(f))
+        return dqdict
+
+
+
+
+    def conditions_check(self): # should this be in buffer.py?
+        # se è già una statets skippo questo passaggio?
+        flag_dict = DataQualityDict()
+        for (f, sv), cond in zip(self.svd.iteritems(), self.flags.itervalues()):
+                operator, value = self.eval_condition(cond)
+                sts = operator(sv, value)
+                flag_dict[f] = sts.to_dqflags()
+        return flag_dict.intersection()
+
+    @staticmethod
+    def eval_condition(condition):
+        if isinstance(condition, basestring):
+                opdict = {'>': op.gt,
+                          '>=': op.ge,
+                          '<': op.lt,
+                          '<=': op.le,
+                          '==': op.eq,
+                          '!=': op.ne}
+                for s, oper in opdict.iteritems():
+                    if s in condition:
+                        return oper, eval(condition.split(s)[-1])
+                raise ValueError('Condition "{0}" not valid'.format(condition))
+        elif isinstance(condition, Number):
+            return op.eq, condition
+        else:
+            raise ValueError('Condition not valid')
 
 register_data_iterator(NDSDataIterator)
 register_data_iterator(NDSDataIterator, 'nds')

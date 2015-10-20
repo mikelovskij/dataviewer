@@ -64,7 +64,8 @@ detector network. `color` can also be specified as a list under [plot].
 
 import os
 import re
-
+import operator as op
+from numbers import Number
 from math import *
 from ConfigParser import ConfigParser
 
@@ -94,6 +95,32 @@ def safe_eval(val):
         return eval(val)
     except (NameError, SyntaxError):
         return str(val)
+
+
+def eval_condition(condition):  # not sure if this is teh best place for this
+    """
+    Evaluates the condition for the state_dq flags
+    :param condition: `basestring` or `Number` ,
+    a string containing the operator to use and the number to confront, e.g
+    '>= 13' or just a number, in this case the operator requested is assumed
+    to be '=='
+    :return: a tuple, containing the operator and the number
+    """
+    if isinstance(condition, basestring):
+            opdict = {'>': op.gt,
+                      '>=': op.ge,
+                      '<': op.lt,
+                      '<=': op.le,
+                      '==': op.eq,
+                      '!=': op.ne}
+            for s, oper in opdict.iteritems():
+                if s in condition:
+                    return oper, eval(condition.split(s)[-1])
+            raise ValueError('Condition "{0}" not valid'.format(condition))
+    elif isinstance(condition, Number):
+        return op.eq, condition
+    else:
+        raise ValueError('Condition not valid')
 
 
 def from_ini(filepath, ifo=None):
@@ -147,13 +174,22 @@ def from_ini(filepath, ifo=None):
     sections = cp.sections()
     if not channels:
         channels = [c for c in sections if c not in ['monitor', 'plot']
-                    if c[:4] not in ['ref:', 'com:']]
+                    if c[:4] not in ['ref:', 'com:', 'flg:']]
 
     references = [c for c in sections if c not in ['monitor', 'plot']
                   if c[:4] == 'ref:']
     if combinations is None:
         combinations = [c for c in sections if c not in ['monitor', 'plot']
                         if c[:4] == 'com:']
+    flags = [c for c in sections if c not in ['monitor', 'plot']
+             if c[:4] == 'flg:']
+
+    # get stateDQ flags
+    fparams = {}
+    for flag in flags:
+        _params = cp.items(flag)
+        cond = safe_eval(_params.pop('condition'))
+        fparams[flag] = cond
 
     # get channel parameters
     cparams = {}
@@ -228,4 +264,6 @@ def from_ini(filepath, ifo=None):
         params['reference'] = rparams
     if combparams:
         params['combination'] = combparams
+    if fparams:
+        params['flag'] = fparams
     return monitor(*channels, **params)
