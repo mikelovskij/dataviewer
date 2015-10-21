@@ -85,7 +85,7 @@ class SpectrogramBuffer(DataBuffer):
         if flagnames:
             for name in flagnames:
                 try:
-                    if ts.span not in flagbuffer[name]:
+                    if ts.span not in flagbuffer[name].active:
                         return False
                 except KeyError as e:
                     e.message = 'cflag {0} does not exist!'.format(name)
@@ -102,7 +102,7 @@ class SpectrogramBuffer(DataBuffer):
         # calculate spectrograms
         data = self.DictClass()
         for channel, ts in zip(self.channels, tsd.values()):
-            if self.flag_check(ts, self.cflags.pop(channel, None), fld):
+            if self.flag_check(ts, self.cflags.get(channel, None), fld):
                 try:
                     specgram = ts.spectrogram(stride[channel],
                                               fftlength=fftlength[channel],
@@ -188,7 +188,7 @@ class SpectrogramMonitor(TimeSeriesMonitor):
         super(SpectrogramMonitor, self).__init__(*channels,
                                                  **kwargs)
         self.buffer.channels = self.spectrograms.channels
-
+        self.coloraxes = OrderedDict()
         # reset buffer duration to store a single stride
         self.duration = self.buffer.duration
         self.buffer.duration = kwargs['interval']
@@ -269,7 +269,6 @@ class SpectrogramMonitor(TimeSeriesMonitor):
                 self.spectrograms.from_timeseriesdict(_new, new_f))
             self.epoch += self.stride
         self.spectrograms.crop(self.epoch - self.duration)
-        #ipsh()
         self.data = type(self.spectrograms.data)()
         for channel in self.channels:
             try:
@@ -284,13 +283,10 @@ class SpectrogramMonitor(TimeSeriesMonitor):
                     self.data[channel][i] = (
                         self.spectrograms.data[channel][i].ratio(
                             channel.ratio))
-        #ipsh()
-        #self.epoch = self.data[self.channels[0]][-1].span[-1]
         return self.data
 
     def refresh(self):
         axes = cycle(self._fig.get_axes(self.AXES_CLASS.name))
-        coloraxes = self._fig.colorbars
         params = self.params['draw']
         # plot spectrograms
         for i, channel in enumerate(self.data):
@@ -312,6 +308,7 @@ class SpectrogramMonitor(TimeSeriesMonitor):
                         pparams[key] = params[key][i]
                 except IndexError:
                     pass
+            coll = None
             for spec in new:
                 coll = ax.plot(spec, label=label, **pparams)
                 label = None
@@ -319,18 +316,18 @@ class SpectrogramMonitor(TimeSeriesMonitor):
             for co in ax.collections:
                 co.set_clim(coll.get_clim())
             if coll:
-                try:
-                    coloraxes[i]
-                except IndexError:
+                if i not in self.coloraxes:
                     cbparams = {}
                     for key, val in self.params['colorbar'].iteritems():
                         if not (isinstance(val, (list, tuple)) and
-                                    isinstance(val[0], (list, tuple, basestring))):
+                                isinstance(val[0], (list, tuple, basestring))):
                             cbparams[key] = self.params['colorbar'][key]
                         else:
                             cbparams[key] = self.params['colorbar'][key][i]
                     try:
-                        self._fig.add_colorbar(mappable=coll, ax=ax, **cbparams)
+                        self._fig.add_colorbar(mappable=coll,
+                                               ax=ax, **cbparams)
+                        self.coloraxes[i] = self._fig.colorbars[-1]
                     except Exception as e:
                         self.logger.error(str(e))
         for ax in self._fig.get_axes(self.AXES_CLASS.name):
