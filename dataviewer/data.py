@@ -60,7 +60,7 @@ class DataMonitor(Monitor):
 
         # separate keyword arguments
         buffkeys = ['host', 'port', 'connection', 'interval', 'duration', 'pad',
-                    'gap', 'attempts', 'flag']
+                    'gap', 'attempts', 'flags']
         buffargs = {'logger': kwargs.get('logger')}
         for key in buffkeys:
             if key in kwargs:
@@ -141,7 +141,7 @@ class DataMonitor(Monitor):
             raise
 
     @abc.abstractmethod
-    def update_data(self):
+    def update_data(self, new):
         pass
 
     # ------------------------------------------

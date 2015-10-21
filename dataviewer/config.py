@@ -97,32 +97,6 @@ def safe_eval(val):
         return str(val)
 
 
-def eval_condition(condition):  # not sure if this is teh best place for this
-    """
-    Evaluates the condition for the state_dq flags
-    :param condition: `basestring` or `Number` ,
-    a string containing the operator to use and the number to confront, e.g
-    '>= 13' or just a number, in this case the operator requested is assumed
-    to be '=='
-    :return: a tuple, containing the operator and the number
-    """
-    if isinstance(condition, basestring):
-            opdict = {'>': op.gt,
-                      '>=': op.ge,
-                      '<': op.lt,
-                      '<=': op.le,
-                      '==': op.eq,
-                      '!=': op.ne}
-            for s, oper in opdict.iteritems():
-                if s in condition:
-                    return oper, eval(condition.split(s)[-1])
-            raise ValueError('Condition "{0}" not valid'.format(condition))
-    elif isinstance(condition, Number):
-        return op.eq, condition
-    else:
-        raise ValueError('Condition not valid')
-
-
 def from_ini(filepath, ifo=None):
     """Configure a new Monitor from an INI file
 
@@ -187,9 +161,15 @@ def from_ini(filepath, ifo=None):
     # get stateDQ flags
     fparams = {}
     for flag in flags:
-        _params = cp.items(flag)
-        cond = safe_eval(_params.pop('condition'))
-        fparams[flag] = cond
+        f_params = cp.items(flag)
+        flag = flag[4:]
+        if r'%(ifo)s' in flag and not ifo:
+            raise ValueError("Cannot interpolate IFO in flag name without "
+                             "IFO environment variable or --ifo on command "
+                             "line")
+        flag = flag % {'ifo': ifo}
+        fparams[flag] = dict((key, safe_eval(val))
+                             for (key, val) in f_params)
 
     # get channel parameters
     cparams = {}
@@ -265,5 +245,5 @@ def from_ini(filepath, ifo=None):
     if combparams:
         params['combination'] = combparams
     if fparams:
-        params['flag'] = fparams
+        params['flags'] = fparams
     return monitor(*channels, **params)

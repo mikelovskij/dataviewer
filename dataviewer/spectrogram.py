@@ -22,7 +22,6 @@
 import re
 from itertools import (cycle, izip_longest)
 
-
 from astropy.time import Time
 
 from gwpy.timeseries import TimeSeriesDict
@@ -52,10 +51,11 @@ class SpectrogramBuffer(DataBuffer):
     ListClass = SpectrogramList
 
     def __init__(self, channels, stride=1, fftlength=1, overlap=0,
-                 method='welch', filters=None, **kwargs):
+                 method='welch', filters=None, cflags=None, **kwargs):
         super(SpectrogramBuffer, self).__init__(channels, **kwargs)
         self.method = method
         self.stride = self._param_dict(stride)
+        self.cflags = self._param_dict(cflags)
         self.fftlength = self._param_dict(fftlength)
         self.overlap = self._param_dict(overlap)
         self.filters = self._param_dict(filters)
@@ -80,7 +80,19 @@ class SpectrogramBuffer(DataBuffer):
             channels, start, end, **kwargs)
         return self.from_timeseriesdict(tsd, **fftparams)
 
-    def from_timeseriesdict(self, tsd, **kwargs):
+    @staticmethod
+    def flag_check(ts, flagnames, flagbuffer):
+        if flagnames:
+            for name in flagnames:
+                try:
+                    if ts.span not in flagbuffer[name]:
+                        return False
+                except KeyError as e:
+                    e.message = 'cflag {0} does not exist!'.format(name)
+                    raise
+        return True
+
+    def from_timeseriesdict(self, tsd, fld, **kwargs):
         # format parameters
         stride = self._param_dict(kwargs.pop('stride', self.stride))
         fftlength = self._param_dict(kwargs.pop('fftlength', self.fftlength))
@@ -90,27 +102,28 @@ class SpectrogramBuffer(DataBuffer):
         # calculate spectrograms
         data = self.DictClass()
         for channel, ts in zip(self.channels, tsd.values()):
-            try:
-                specgram = ts.spectrogram(stride[channel],
-                                          fftlength=fftlength[channel],
-                                          overlap=overlap[channel],
-                                          method=self.method,
-                                          **self.window) ** (1 / 2.)
-            except ZeroDivisionError:
-                if stride[channel] == 0:
-                    raise ZeroDivisionError("Spectrogram stride is 0")
-                elif fftlength[channel] == 0:
-                    raise ZeroDivisionError("FFT length is 0")
-                else:
-                    raise
-            if hasattr(channel, 'resample') and channel.resample is not None:
-                nyq = float(channel.resample) / 2.
-                nyqidx = int(nyq / specgram.df.value)
-                specgram = specgram[:, :nyqidx]
-            if channel in filters and filters[channel]:
-                specgram = specgram.filter(*filters[channel]).copy()
-            data[channel] = specgram
-
+            if self.flag_check(ts, self.cflags.pop(channel, None), fld):
+                try:
+                    specgram = ts.spectrogram(stride[channel],
+                                              fftlength=fftlength[channel],
+                                              overlap=overlap[channel],
+                                              method=self.method,
+                                              **self.window) ** (1 / 2.)
+                except ZeroDivisionError:
+                    if stride[channel] == 0:
+                        raise ZeroDivisionError("Spectrogram stride is 0")
+                    elif fftlength[channel] == 0:
+                        raise ZeroDivisionError("FFT length is 0")
+                    else:
+                        raise
+                if hasattr(channel, 'resample') and \
+                        channel.resample is not None:
+                    nyq = float(channel.resample) / 2.
+                    nyqidx = int(nyq / specgram.df.value)
+                    specgram = specgram[:, :nyqidx]
+                if channel in filters and filters[channel]:
+                    specgram = specgram.filter(*filters[channel]).copy()
+                data[channel] = specgram
         return data
 
 
@@ -147,7 +160,7 @@ class SpectrogramMonitor(TimeSeriesMonitor):
         ratio = kwargs.pop('ratio', None)
         resample = kwargs.pop('resample', None)
         kwargs.setdefault('interval', stride)
-
+        cflags = kwargs.pop('cflags', [])
         if kwargs['interval'] % stride:
             raise ValueError("%s interval must be exact multiple of the stride"
                              % type(self).__name__)
@@ -155,7 +168,10 @@ class SpectrogramMonitor(TimeSeriesMonitor):
         # build 'data' as SpectrogramBuffer
         self.spectrograms = SpectrogramIterator(
             channels, stride=stride, method=method, overlap=overlap,
-            fftlength=fftlength, window=window)
+            fftlength=fftlength, window=window, cflags=cflags)
+        # todo: sistemo sti cazzo di kwargs per lo spectrogram iterator, almeno per i vari cparams
+        self.spectrograms.cflags = dict(zip(self.spectrograms.channels,
+                                            cflags))
         if isinstance(filters, list):
             self.spectrograms.filters = dict(zip(self.spectrograms.channels,
                                                  filters))
@@ -226,9 +242,9 @@ class SpectrogramMonitor(TimeSeriesMonitor):
 
     def update_data(self, new):
         """Update the `SpectrogramMonitor` data
-
         This method only applies a ratio, if configured
         """
+        new, new_f = new
         # check that the stored epoch is bigger then the first buffered data
         if new[self.channels[0]][0].span[0] > self.epoch:
             s = ('The available data starts at gps %d '
@@ -250,19 +266,26 @@ class SpectrogramMonitor(TimeSeriesMonitor):
             self.logger.debug('Computing spectrogram from epoch %d',
                               self.epoch)
             self.spectrograms.append(
-                self.spectrograms.from_timeseriesdict(_new))
+                self.spectrograms.from_timeseriesdict(_new, new_f))
             self.epoch += self.stride
         self.spectrograms.crop(self.epoch - self.duration)
+        #ipsh()
         self.data = type(self.spectrograms.data)()
         for channel in self.channels:
-            self.data[channel] = type(self.spectrograms.data[channel])(
-                *self.spectrograms.data[channel])
+            try:
+                self.data[channel] = type(self.spectrograms.data[channel])(
+                    *self.spectrograms.data[channel])
+                nepoch = self.data[channel][-1].span[-1]
+                self.epoch = max(nepoch, self.epoch)
+            except KeyError:
+                self.data[channel] = SpectrogramList()
             if hasattr(channel, 'ratio') and channel.ratio is not None:
                 for i in range(len(self.data[channel])):
                     self.data[channel][i] = (
                         self.spectrograms.data[channel][i].ratio(
                             channel.ratio))
-        self.epoch = self.data[self.channels[0]][-1].span[-1]
+        #ipsh()
+        #self.epoch = self.data[self.channels[0]][-1].span[-1]
         return self.data
 
     def refresh(self):
@@ -295,20 +318,21 @@ class SpectrogramMonitor(TimeSeriesMonitor):
             # rescale all the colormaps to the last one plotted
             for co in ax.collections:
                 co.set_clim(coll.get_clim())
-            try:
-                coloraxes[i]
-            except IndexError:
-                cbparams = {}
-                for key, val in self.params['colorbar'].iteritems():
-                    if not (isinstance(val, (list, tuple)) and
-                                isinstance(val[0], (list, tuple, basestring))):
-                        cbparams[key] = self.params['colorbar'][key]
-                    else:
-                        cbparams[key] = self.params['colorbar'][key][i]
+            if coll:
                 try:
-                    self._fig.add_colorbar(mappable=coll, ax=ax, **cbparams)
-                except Exception as e:
-                    self.logger.error(str(e))
+                    coloraxes[i]
+                except IndexError:
+                    cbparams = {}
+                    for key, val in self.params['colorbar'].iteritems():
+                        if not (isinstance(val, (list, tuple)) and
+                                    isinstance(val[0], (list, tuple, basestring))):
+                            cbparams[key] = self.params['colorbar'][key]
+                        else:
+                            cbparams[key] = self.params['colorbar'][key][i]
+                    try:
+                        self._fig.add_colorbar(mappable=coll, ax=ax, **cbparams)
+                    except Exception as e:
+                        self.logger.error(str(e))
         for ax in self._fig.get_axes(self.AXES_CLASS.name):
             ax.relim()
             ax.autoscale_view(scalex=False)

@@ -65,12 +65,21 @@ class BufferCore(object):
     SeriesClass = TimeSeries
     DictClass = OrderedDict
 
-    def __init__(self, channels, logger=Logger('buffer'), **kwargs):
+    def __init__(self, channels, logger=Logger('buffer'), flags=None,
+                 **kwargs):
         """Create a new `DataBuffer`
         """
         if isinstance(channels, str):
             channels = [channels]
         self.channels = ChannelList.from_names(*channels)
+        self.allchannels = ChannelList.from_names(*channels) # no .copy method
+        if flags:
+            self.flags = type(flags)()
+            fnames = ChannelList.from_names(*flags.keys())
+            for fname, fdict in zip(fnames, flags.itervalues()):
+                self.flags[fname] = fdict
+            self. allchannels += fnames
+
         self.data = self.DictClass()
         self.s_data = self.DictClass()
         self.logger = logger
@@ -334,16 +343,17 @@ class BufferCore(object):
         """
         for key, val in new.iteritems():
             if key not in self.s_data:
-                self.s_data[key] = self.ListClass()
-            for seg in val.active:
-                self.s_data[key].active.append(seg)
+                self.s_data[key] = val
+            else:
+                for seg in val.active:
+                    self.s_data[key].active.append(seg)
         self.seg_coalesce()
 
     def seg_coalesce(self):
         """Coalesce the segment data held within this `DataBuffer`
         """
         for key, data in self.s_data.iteritems():
-            self.data[key].active = data.active.coalesce()
+            self.s_data[key].active = data.active.coalesce()
 
     def seg_crop(self, start=None, end=None):
         self.seg_coalesce()

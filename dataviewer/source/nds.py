@@ -23,13 +23,13 @@
 from numpy import ceil
 from gwpy.io import nds as ndsio
 from gwpy.timeseries import (TimeSeries, TimeSeriesDict, StateVector, StateVectorDict, StateTimeSeries)
-from gwpy.segments import DataQualityDict
+from gwpy.segments import DataQualityDict, DataQualityFlag
 from fractions import gcd
 from time import sleep
 from gwpy.time import tconvert
 import operator as op
 from numbers import Number
-from ..inspector import ipsh
+
 from .. import version
 from ..log import Logger
 from . import (register_data_source, register_data_iterator)
@@ -149,14 +149,13 @@ class NDSDataIterator(NDSDataSource):
     """
     def __init__(self, channels, duration=0, interval=2, host=None,
                  port=None, connection=None, logger=Logger('nds'),
-                 gap='pad', pad=0.0, attempts=50, flags=None, **kwargs):
+                 gap='pad', pad=0.0, attempts=50, **kwargs):
         """Construct a new iterator
         """
         super(NDSDataIterator, self).__init__(channels, host=host, port=port,
                                               connection=connection,
                                               logger=logger, **kwargs)
-        self.flags = flags
-        self.svd = StateVectorDict()
+
 
         if self.connection.get_protocol() == 1:
             ndsstride = 1
@@ -178,15 +177,15 @@ class NDSDataIterator(NDSDataSource):
     def start(self):
         try:
             self.iterator = self.connection.iterate(
-                self.ndsstride, self._unique_channel_names(self.channels))
-            if self.flags:
-                self.flag_iterator = self.connection.iterate(
-                    self.ndsstride,
-                    self._unique_channel_names(self.flags.keys))
+                self.ndsstride, self._unique_channel_names(self.allchannels))
+            # if hasattr(self, 'flags'):
+            #     self.flag_iterator = self.connection.iterate(
+            #         self.ndsstride,
+            #         self._unique_channel_names(self.flags.keys()))
         except RuntimeError as e:
             if e.message == 'Invalid channel name':
                 self.logger.error('Invalid channel name %s' % str(
-                    self._unique_channel_names(self.channels)))
+                    self._unique_channel_names(self.allchannels)))
             raise
         self.logger.debug('NDSDataIterator ready')
         return self.iterator
@@ -199,17 +198,25 @@ class NDSDataIterator(NDSDataSource):
     def _next(self):
         # why not do it in __init__?
         uchannels = self._unique_channel_names(self.channels)
-        uflags = self._unique_channel_names(self.flags.keys)
+        if hasattr(self, 'flags'):
+            uflags = self._unique_channel_names(self.flags.keys())
+        else:
+            uflags = []
         new = TimeSeriesDict()
+        svd = StateVectorDict()
         new_flags = DataQualityDict()
+        dq_dic = DataQualityDict()
+        f_buffers = []
         span = 0
         epoch = 0
         att = 0
         self.logger.debug('Waiting for next NDS2 packet...')
         while span < self.interval:
             try:
-                f_buffers = next(self.flag_iterator)
                 buffers = next(self.iterator)
+                ch_buffers = buffers[0:len(uchannels)]
+                if hasattr(self, 'flags'):
+                    f_buffers = buffers[-len(uflags):]
             except RuntimeError as e:
                 self.logger.error('RuntimeError caught: %s' % str(e))
                 if att < self.attempts:
@@ -229,9 +236,16 @@ class NDSDataIterator(NDSDataSource):
                     break
             att = 0
             for f_buffer, flg in zip(f_buffers, uflags):
-                self.svd[flg] = StateVector.from_nds2_buffer(f_buffer)
-                new_flags = self.flag_converter()
-            for buff, c in zip(buffers, uchannels):
+                svd[flg] = StateVector.from_nds2_buffer(f_buffer)
+                dq_dic = self.flag_converter(svd)
+            for key, val in dq_dic.iteritems():
+                if key not in new_flags:
+                    new_flags[key] = val
+                else:
+                    for seg in val.active:
+                        new_flags[key].active.append(seg)
+
+            for buff, c in zip(ch_buffers, uchannels):
                 ts = TimeSeries.from_nds2_buffer(buff)
                 try:
                     new.append({c: ts}, gap=self.gap, pad=self.pad)
@@ -262,8 +276,9 @@ class NDSDataIterator(NDSDataSource):
         for chan in self.channels:
             out[chan] = new[self._channel_basename(chan)].copy()
         dq_out = type(new_flags)()
-        for flag in self.flags.keys():
-            dq_out[flag] = new_flags[self._channel_basename(chan)].copy()
+        if hasattr(self, 'flags'):  # todo: sto if c'è troppe volte, come lo tolgo?
+            for fname, flag in new_flags.iteritems():
+                dq_out[fname] = flag.copy()
         return out, dq_out
 
     def next(self):
@@ -322,27 +337,29 @@ class NDSDataIterator(NDSDataSource):
         self.logger.debug(
             'The buffer has been set to store %d s of data' % self.duration)
 
-    #def to_dq_flag_dict(self):
-    #    svd = StateVectorDict()
-    #    for buff, f in zip(fag_buffers, uflags):
-    #        svd[f] = StateVector.from_nds2_buffer(buff)
-
-    def flag_converter(self):
+    def flag_converter(self, svd):
         dqdict = DataQualityDict()
-        for (f, sv), cond, name, prec in zip(
-                self.svd.iteritems(), self.flags.itervalues(), cose):
+        # todo: check the unique things if requires some adjustment
+        for (f, sv), kwargs in zip(svd.iteritems(),
+                                   self.flags.itervalues()):
+            cond = kwargs.get('condition', None)
+            name = kwargs.get('name')
+            prec = kwargs.get('precision', None)
+            dq_kwargs = {}
+            if prec:
+                    dq_kwargs['minlen'] = int(prec*sv.samplerate)
             if isinstance(name, (list, tuple)):
-                dqdict.update(sv.to_dqflags(bits=name,
-                                            minlen=int(prec*sv.samplerate)))
+                dq_kwargs['bits'] = name
+                dqdict.update(sv.to_dqflags(**dq_kwargs))
             elif isinstance(name, basestring):
+                dq_kwargs['name'] = name
                 if cond:
                     operator, value = self.eval_condition(cond)
                 else:
                     operator = op.eq
                     value = True
                 sts = operator(sv, value)
-                dqdict[name] = sts.to_dqflags(name=name,
-                                              minlen=int(prec*sts.samplerate))
+                dqdict[name] = sts.to_dqflag(**dq_kwargs)
             else:
                 raise ValueError('Name parameter for flag {0} not valid'
                                  .format(f))
