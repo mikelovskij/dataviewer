@@ -206,6 +206,7 @@ class BNSRangeSpectrogramMonitor(TimeSeriesMonitor):
         filter = kwargs.pop('filter', None)
         ratio = kwargs.pop('ratio', None)
         resample = kwargs.pop('resample', None)
+        cflags = kwargs.pop('cflags', [])
         kwargs.setdefault('interval', stride)
         flow = kwargs.pop('flow')
         fhigh = kwargs.pop('fhigh')
@@ -225,6 +226,8 @@ class BNSRangeSpectrogramMonitor(TimeSeriesMonitor):
                                                 filter))
         else:
             self.spectrograms.filter = filter
+        self.spectrograms.cflags = dict(zip(self.spectrograms.channels,
+                                            cflags))
         self.picklefile = picklefile
         self.fftlength = fftlength
         self.stride = stride
