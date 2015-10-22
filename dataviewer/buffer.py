@@ -27,11 +27,13 @@ try:
 except ImportError:
     from ordereddict import OrderedDict
 
+import warnings
 from gwpy.detector import (Channel, ChannelList)
 from gwpy.segments import (Segment, SegmentList, DataQualityFlag)
 from gwpy.time import to_gps
 from gwpy.timeseries import (TimeSeries, TimeSeriesList, TimeSeriesDict,
                              StateVector, StateVectorDict)
+from gwpy.segments import DataQualityDict
 from gwpy.spectrogram import (Spectrogram, SpectrogramList)
 
 from . import version
@@ -64,13 +66,23 @@ class BufferCore(object):
     SeriesClass = TimeSeries
     DictClass = OrderedDict
 
-    def __init__(self, channels, logger=Logger('buffer'), **kwargs):
+    def __init__(self, channels, logger=Logger('buffer'), flags=None,
+                 **kwargs):
         """Create a new `DataBuffer`
         """
         if isinstance(channels, str):
             channels = [channels]
         self.channels = ChannelList.from_names(*channels)
+        self.allchannels = ChannelList.from_names(*channels) # no .copy method
+        if flags:
+            self.flags = type(flags)()
+            fnames = ChannelList.from_names(*flags.keys())
+            for fname, fdict in zip(fnames, flags.itervalues()):
+                self.flags[fname] = fdict
+            self. allchannels += fnames
+
         self.data = self.DictClass()
+        self.s_data = self.DictClass()
         self.logger = logger
 
     def get(self, segments=None, channels=None, fetch=True, **fetchargs):
@@ -313,6 +325,90 @@ class BufferCore(object):
     @staticmethod
     def _channel_basename(channel):
         return channel.ndsname.split('/')[0]
+
+# -----------------------------------------------------------------------------
+#
+# Segment methods
+#
+# -----------------------------------------------------------------------------
+    def seg_data(self):
+        """The data quality flags held within this `DataBuffer`
+
+        This property should be overridden by all subclasses to return
+        the correct data.
+        """
+        return self._s_data
+
+    def seg_append(self, new):
+        """Append DQ segments to this `DataBuffer`
+        """
+        for key, val in new.iteritems():
+            if key not in self.s_data:
+                self.s_data[key] = val
+            else:
+                for seg in val.active:
+                    self.s_data[key].active.append(seg)
+                    self.s_data[key].known.append(seg)
+        self.seg_coalesce()
+
+    def seg_coalesce(self):
+        """Coalesce the segment data held within this `DataBuffer`
+        """
+        for key, data in self.s_data.iteritems():
+            self.s_data[key].active = data.active.coalesce()
+            self.s_data[key].known = data.known.coalesce()
+
+    def seg_crop(self, start=None, end=None):
+        self.seg_coalesce()
+        for key, data in self.s_data.iteritems():
+            ac_seg = SegmentList()
+            kc_seg = SegmentList()
+            if end is None:
+                end = data.known[-1][-1]
+            if start is None:
+                start = data.known[0][0]
+            cropper = Segment(start, end)
+            for a_seg in data.active:
+                try:
+                    ac_seg.append(a_seg & cropper)
+                except ValueError:
+                    pass
+            for k_seg in data.known:
+                try:
+                    kc_seg.append(k_seg & cropper)
+                except ValueError:
+                    pass
+            data.active = ac_seg
+            data.known = kc_seg
+
+    @property
+    def s_segments(self):
+        """The segments during which data have been fetched
+
+        :type: `~gwpy.segments.SegmentList`
+        """
+        try:
+            return reduce(
+                operator.or_, (flag.known for flag in self.s_data.values()))
+        except TypeError:
+            return SegmentList()
+
+    @property
+    def s_extent(self):
+        """The enclosing segment during which data have been fetched
+
+        .. warning::
+
+           Thie `extent` does not guarantee that all data in the middle
+           have been fetched, gaps may be present depending on which
+           segments were used
+
+        :type: `~gwpy.segments.Segment`
+        """
+        return Segment(*self.s_segments.extent())
+
+
+
 
 
 # -----------------------------------------------------------------------------

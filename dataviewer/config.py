@@ -64,7 +64,8 @@ detector network. `color` can also be specified as a list under [plot].
 
 import os
 import re
-
+import operator as op
+from numbers import Number
 from math import *
 from ConfigParser import ConfigParser
 
@@ -147,13 +148,28 @@ def from_ini(filepath, ifo=None):
     sections = cp.sections()
     if not channels:
         channels = [c for c in sections if c not in ['monitor', 'plot']
-                    if c[:4] not in ['ref:', 'com:']]
+                    if c[:4] not in ['ref:', 'com:', 'flg:']]
 
     references = [c for c in sections if c not in ['monitor', 'plot']
                   if c[:4] == 'ref:']
     if combinations is None:
         combinations = [c for c in sections if c not in ['monitor', 'plot']
                         if c[:4] == 'com:']
+    flags = [c for c in sections if c not in ['monitor', 'plot']
+             if c[:4] == 'flg:']
+
+    # get stateDQ flags
+    fparams = {}
+    for flag in flags:
+        f_params = cp.items(flag)
+        flag = flag[4:]
+        if r'%(ifo)s' in flag and not ifo:
+            raise ValueError("Cannot interpolate IFO in flag name without "
+                             "IFO environment variable or --ifo on command "
+                             "line")
+        flag = flag % {'ifo': ifo}
+        fparams[flag] = dict((key, safe_eval(val))
+                             for (key, val) in f_params)
 
     # get channel parameters
     cparams = {}
@@ -228,4 +244,6 @@ def from_ini(filepath, ifo=None):
         params['reference'] = rparams
     if combparams:
         params['combination'] = combparams
+    if fparams:
+        params['flags'] = fparams
     return monitor(*channels, **params)
