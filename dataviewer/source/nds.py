@@ -352,7 +352,7 @@ class NDSDataIterator(NDSDataSource):
             prec = kwargs.get('precision', None)
             dq_kwargs = {'round': True}  # todo: add to config?
             if sv.unit:
-                sv.override_unit(None)
+                sv.override_unit('dimensionless')
             if prec:
                     dq_kwargs['minlen'] = int(prec*sv.samplerate)
             if isinstance(name, (list, tuple)):
