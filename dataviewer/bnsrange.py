@@ -58,8 +58,8 @@ class SpectrogramBuffer(DataBuffer):
     ListClass = SpectrogramList
 
     def __init__(self, channels, stride=1, fftlength=1, overlap=0,
-                 method='welch', filter=None, fhigh=8000, flow=0,
-                 statechannel=list(), **kwargs):
+                 method='welch', filter=None, cflags=None,
+                 fhigh=8000, flow=0, statechannel=list(), **kwargs):
         super(SpectrogramBuffer, self).__init__(channels, **kwargs)
         self.method = method
         if 'window' in kwargs:
@@ -72,6 +72,7 @@ class SpectrogramBuffer(DataBuffer):
         self.overlap = self._param_dict(overlap)
         self.filter = self._param_dict(filter)
         self.fhigh = self._param_dict(fhigh)
+        self.cflags = self._param_dict(cflags)
         self.flow = self._param_dict(flow)
         # define state vector
         global stateDQ
@@ -108,7 +109,19 @@ class SpectrogramBuffer(DataBuffer):
             channels, start, end, **kwargs)
         return self.from_timeseriesdict(tsd, **fftparams)
 
-    def from_timeseriesdict(self, tsd, **kwargs):
+    @staticmethod
+    def flag_check(ts, flagnames, flagbuffer):
+        if flagnames:
+            for name in flagnames:
+                try:
+                    if ts.span not in flagbuffer[name].active:
+                        return False
+                except KeyError as e:
+                    e.message = 'cflag {0} does not exist!'.format(name)
+                    raise
+        return True
+
+    def from_timeseriesdict(self, tsd, fld, **kwargs):
         # format parameters
         stride = self._param_dict(kwargs.pop('stride', self.stride))
         fftlength = self._param_dict(kwargs.pop('fftlength', self.fftlength))
@@ -128,33 +141,34 @@ class SpectrogramBuffer(DataBuffer):
                 stateDQ = stateDQ and eval(str(pvt.get()) + cond)
         if stateDQ:
             for channel, ts in zip(self.channels, tsd.values()):
-                spec = ts.asd(fftlength=fftlength[channel],
-                              overlap=overlap[channel],
-                              method=self.method,
-                              **self.window)\
-                    .crop(flow[channel], fhigh[channel])
-                spec.epoch = ts.epoch
-                self.logger.debug('TimeSeries span: {0},'
-                                  ' TimeSeries length: {1}, Stride: {2}'
-                                  .format(ts.span,
-                                          ts.span[-1] - ts.span[0],
-                                          stride[channel]))
-                if hasattr(channel, 'resample')\
-                        and channel.resample is not None:
-                    nyq = float(channel.resample) / 2.
-                    nyqidx = int(nyq / spec.df.value)
-                    spec = spec[:nyqidx]
-                if channel in filter and filter[channel]:
-                    self.logger.debug('Filtering ASD')
-                    spec = spec.filter(*filter[channel]).copy()
-                self.logger.debug('Calculating insp. range psd')
-                range_spec = inspiral_range_psd(spec ** 2)
-                self.logger.debug('Insp. range psd calculated')
-                ranges = (range_spec * range_spec.df) ** 0.5
-                data[channel] = Spectrogram.from_spectra(
-                    ranges, epoch=spec.epoch, dt=self.stride[channel],
-                    frequencies=spec.frequencies)
-                self.logger.debug('From_timeseries completed...')
+                if self.flag_check(ts, self.cflags.get(channel, None), fld):
+                    spec = ts.asd(fftlength=fftlength[channel],
+                                  overlap=overlap[channel],
+                                  method=self.method,
+                                  **self.window)\
+                        .crop(flow[channel], fhigh[channel])
+                    spec.epoch = ts.epoch
+                    self.logger.debug('TimeSeries span: {0},'
+                                      ' TimeSeries length: {1}, Stride: {2}'
+                                      .format(ts.span,
+                                              ts.span[-1] - ts.span[0],
+                                              stride[channel]))
+                    if hasattr(channel, 'resample')\
+                            and channel.resample is not None:
+                        nyq = float(channel.resample) / 2.
+                        nyqidx = int(nyq / spec.df.value)
+                        spec = spec[:nyqidx]
+                    if channel in filter and filter[channel]:
+                        self.logger.debug('Filtering ASD')
+                        spec = spec.filter(*filter[channel]).copy()
+                    self.logger.debug('Calculating insp. range psd')
+                    range_spec = inspiral_range_psd(spec ** 2)
+                    self.logger.debug('Insp. range psd calculated')
+                    ranges = (range_spec * range_spec.df) ** 0.5
+                    data[channel] = Spectrogram.from_spectra(
+                        ranges, epoch=spec.epoch, dt=self.stride[channel],
+                        frequencies=spec.frequencies)
+                    self.logger.debug('From_timeseries completed...')
         return data
 
 
@@ -217,7 +231,7 @@ class BNSRangeSpectrogramMonitor(TimeSeriesMonitor):
         self.overlap = overlap
         self.olepoch = None
         self.duration = kwargs['duration']
-
+        self.coloraxes = OrderedDict()
         # build monitor
         kwargs.setdefault('yscale', 'log')
         kwargs.setdefault('gap', 'raise')
@@ -278,11 +292,11 @@ class BNSRangeSpectrogramMonitor(TimeSeriesMonitor):
         self.set_params('refresh')
         return self._fig
 
-    def update_data(self, new, gap='pad', pad=0):
+    def update_data(self, new):
         """Update the `SpectrogramMonitor` data
         This method only applies a ratio, if configured
         """
-
+        new, new_f = new
         # check that the stored epoch is bigger then the first buffered data
         if new[self.channels[0]][0].span[0] > self.epoch:
             s = ('The available data starts at gps %d '
@@ -316,7 +330,7 @@ class BNSRangeSpectrogramMonitor(TimeSeriesMonitor):
             self.logger.debug('Calculating spectrogram from epoch {0}'
                               .format(self.epoch))
             self.spectrograms.append(
-                self.spectrograms.from_timeseriesdict(_new))
+                self.spectrograms.from_timeseriesdict(_new, new_f))
             self.logger.debug('New stride appended')
             self.epoch += self.stride
             self.spectrograms.crop(self.epoch - self.duration)
@@ -399,25 +413,22 @@ class BNSRangeSpectrogramMonitor(TimeSeriesMonitor):
                         co.set_clim(coll.get_clim())
 
                     # set colorbar
-                    try:
-                        coloraxes[i]
-                    except IndexError:
+                    if coll and i not in self.coloraxes:
                         cbparams = {}
-                        for key, val in self.params['colorbar'].iteritems():
+                        for key, val in self.params['colorbar']\
+                                .iteritems():
                             if not (isinstance(val, (list, tuple)) and
-                                    isinstance(val[0], (list,
-                                                        tuple, basestring))):
+                                    isinstance(val[0], (list, tuple,
+                                                        basestring))):
                                 cbparams[key] = self.params['colorbar'][key]
                             else:
                                 cbparams[key] = self.params['colorbar'][key][i]
                         try:
-                            self._fig.add_colorbar(mappable=coll, ax=ax,
-                                                   **cbparams)
+                            self._fig.add_colorbar(mappable=coll,
+                                                   ax=ax, **cbparams)
+                            self.coloraxes[i] = self._fig.colorbars[-1]
                         except Exception as e:
                             self.logger.error(str(e))
-                else:
-                    raise UserException("Unknown plot option")
-                    # label = None
             k = 0  # for resizing plots to look better
             for ax in self._fig.get_axes(self.AXES_CLASS.name):
                 if not k:

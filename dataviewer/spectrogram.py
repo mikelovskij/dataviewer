@@ -315,21 +315,20 @@ class SpectrogramMonitor(TimeSeriesMonitor):
             # rescale all the colormaps to the last one plotted
             for co in ax.collections:
                 co.set_clim(coll.get_clim())
-            if coll:
-                if i not in self.coloraxes:
-                    cbparams = {}
-                    for key, val in self.params['colorbar'].iteritems():
-                        if not (isinstance(val, (list, tuple)) and
-                                isinstance(val[0], (list, tuple, basestring))):
-                            cbparams[key] = self.params['colorbar'][key]
-                        else:
-                            cbparams[key] = self.params['colorbar'][key][i]
-                    try:
-                        self._fig.add_colorbar(mappable=coll,
-                                               ax=ax, **cbparams)
-                        self.coloraxes[i] = self._fig.colorbars[-1]
-                    except Exception as e:
-                        self.logger.error(str(e))
+            if coll and i not in self.coloraxes:
+                cbparams = {}
+                for key, val in self.params['colorbar'].iteritems():
+                    if not (isinstance(val, (list, tuple)) and
+                            isinstance(val[0], (list, tuple, basestring))):
+                        cbparams[key] = self.params['colorbar'][key]
+                    else:
+                        cbparams[key] = self.params['colorbar'][key][i]
+                try:
+                    self._fig.add_colorbar(mappable=coll,
+                                           ax=ax, **cbparams)
+                    self.coloraxes[i] = self._fig.colorbars[-1]
+                except Exception as e:
+                    self.logger.error(str(e))
         for ax in self._fig.get_axes(self.AXES_CLASS.name):
             ax.relim()
             ax.autoscale_view(scalex=False)
