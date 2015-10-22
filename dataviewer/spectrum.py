@@ -310,7 +310,8 @@ class SpectrumMonitor(TimeSeriesMonitor):
             self._fig.add_colorbar(visible=False, ax=ax)
         return self._fig
 
-    def update_data(self, new, gap='pad', pad=0):
+    def update_data(self, new):
+        new, new_f = new
         # for ease strip out last TS of the new data
         new = dict((key, val[-1]) for (key, val) in new.iteritems())
         if not new:
