@@ -342,8 +342,13 @@ class BNSRangeSpectrogramMonitor(TimeSeriesMonitor):
         if self.spectrograms.data:  # is this if necessary?
             # TODO: any way to avoid looping since there is only one channel?
             for channel in self.channels:
-                self.data[channel] = type(self.spectrograms.data[channel])(
-                    *self.spectrograms.data[channel])
+                try:
+                    self.data[channel] = type(self.spectrograms.data[channel])(
+                        *self.spectrograms.data[channel])
+                    nepoch = self.data[channel][-1].span[-1]
+                    self.epoch = max(nepoch, self.epoch)
+                except KeyError:
+                    self.data[channel] = SpectrogramList()
                 self.logger.debug('Data copied in buffer')
                 if self.picklefile:
                     picklehandle = open(self.picklefile, 'w')
@@ -351,7 +356,6 @@ class BNSRangeSpectrogramMonitor(TimeSeriesMonitor):
                                  cPickle.HIGHEST_PROTOCOL)
                     picklehandle.close()
                     self.logger.debug('Pickle saved')
-        self.epoch = self.data[self.channels[0]][-1].span[-1]
         return self.data
 
     def refresh(self):
