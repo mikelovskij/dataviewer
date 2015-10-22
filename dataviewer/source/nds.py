@@ -317,7 +317,6 @@ class NDSDataIterator(NDSDataSource):
             self.seg_append(new_dq)
             if abs(self.s_segments) > self.duration:
             # todo: understand why the int( is necessary, due to small errors in epoch?
-                print '%.15f' % epoch
                 self.seg_crop(start=int(epoch - self.duration))
         return self.data, self.s_data
 
@@ -366,7 +365,6 @@ class NDSDataIterator(NDSDataSource):
                 else:
                     operator = op.eq
                     value = True
-                print sv
                 sts = operator(sv, value)
                 dqdict[name] = sts.to_dqflag(**dq_kwargs)
             else:
