@@ -29,7 +29,7 @@ from time import sleep
 from gwpy.time import tconvert
 import operator as op
 from numbers import Number
-from ..inspector import ipsh
+
 from .. import version
 from ..log import Logger
 from . import (register_data_source, register_data_iterator)
