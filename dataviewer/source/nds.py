@@ -363,6 +363,7 @@ class NDSDataIterator(NDSDataSource):
                 else:
                     operator = op.eq
                     value = True
+                print sv
                 sts = operator(sv, value)
                 dqdict[name] = sts.to_dqflag(**dq_kwargs)
             else:
