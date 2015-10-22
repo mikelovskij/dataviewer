@@ -21,6 +21,7 @@
 
 
 from numpy import ceil
+
 from gwpy.io import nds as ndsio
 from gwpy.timeseries import (TimeSeries, TimeSeriesDict, StateVector, StateVectorDict, StateTimeSeries)
 from gwpy.segments import DataQualityDict, DataQualityFlag
@@ -352,7 +353,7 @@ class NDSDataIterator(NDSDataSource):
             prec = kwargs.get('precision', None)
             dq_kwargs = {'round': True}  # todo: add to config?
             if sv.unit:
-                sv.override_unit('dimensionless')
+                sv.override_unit('')
             if prec:
                     dq_kwargs['minlen'] = int(prec*sv.samplerate)
             if isinstance(name, (list, tuple)):
