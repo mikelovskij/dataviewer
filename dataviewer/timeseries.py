@@ -75,6 +75,8 @@ class TimeSeriesMonitor(DataMonitor):
         kwargs.setdefault('pad', nan)
         # parse references
         super(TimeSeriesMonitor, self).__init__(*channels, **kwargs)
+        self.cflags = kwargs.pop('cflags', [])
+        self.cflags = self.cparams_parser(self.cflags)
 
     def init_figure(self):
         self._fig = self.FIGURE_CLASS(**self.params['figure'])
@@ -107,6 +109,10 @@ class TimeSeriesMonitor(DataMonitor):
         return self.buffer.data
 
     @property
+    def f_data(self):
+        return self.buffer.s_data
+
+    @property
     def duration(self):
         return self.buffer.duration
 
@@ -114,8 +120,21 @@ class TimeSeriesMonitor(DataMonitor):
     def duration(self, d):
         self.buffer.duration = d
 
+    @staticmethod
+    def flag_check(ts, flagnames, flagbuffer):
+        if flagnames:
+            for name in flagnames:
+                try:
+                    if ts.span not in flagbuffer[name].active:
+                        return False
+                except KeyError as e:
+                    e.message = 'cflag {0} does not exist!'.format(name)
+                    raise
+        return True
+
     def update_data(self, new):
-        self.epoch = new[self.channels[0]].segments[-1][1]
+        self.epoch = new[0][self.channels[0]].segments[-1][1]
+        # check epoch and
 
     def refresh(self):
         lines = [l for ax in self._fig.axes for l in ax.lines]
@@ -136,7 +155,7 @@ class TimeSeriesMonitor(DataMonitor):
                             pparams[key] = params[key][i]
                     except IndexError:
                         pass
-
+                # for semplicity, the first time, the dq flags will be ignored
                 ts = self.data[channel][0].copy()
                 for t2 in self.data[channel][1:]:
                     ts.append(t2, pad=self.buffer.pad, gap=self.buffer.gap)
@@ -146,11 +165,14 @@ class TimeSeriesMonitor(DataMonitor):
                 # TODO: remove .copy() as soon as copy=True is fixed in gwpy
                 ts = TimeSeries(line.get_ydata(), times=line.get_xdata(),
                                 copy=True).copy()
+
                 for t2 in self.buffer.get((ts.span[1], self.epoch), channel,
                                           fetch=False):
-                    ts.append(t2, pad=self.buffer.pad, gap=self.buffer.gap)
-                line.set_xdata(ts.times.value)
-                line.set_ydata(ts.value)
+                    if self.flag_check(t2, self.cflags.get(channel, None),
+                                       self.f_data):
+                        ts.append(t2, pad=self.buffer.pad, gap=self.buffer.gap)
+                        line.set_xdata(ts.times.value)
+                        line.set_ydata(ts.value)
 
         # format figure
         if 'ylim' not in self.params['refresh']:
@@ -169,6 +191,9 @@ class TimeSeriesMonitor(DataMonitor):
         self.set_params('refresh')
         self._fig.refresh()
         self.logger.debug('Figure refreshed')
+
+    def cparams_parser(self, cparam):
+        return dict(zip(self.channels, cparam))
 
     @classmethod
     def add_cli_parser(cls, parser, parents=[]):
