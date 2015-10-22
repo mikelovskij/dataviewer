@@ -27,6 +27,7 @@ try:
 except ImportError:
     from ordereddict import OrderedDict
 
+import warnings
 from gwpy.detector import (Channel, ChannelList)
 from gwpy.segments import (Segment, SegmentList, DataQualityFlag)
 from gwpy.time import to_gps
@@ -347,6 +348,7 @@ class BufferCore(object):
             else:
                 for seg in val.active:
                     self.s_data[key].active.append(seg)
+                    self.s_data[key].known.append(seg)
         self.seg_coalesce()
 
     def seg_coalesce(self):
@@ -354,23 +356,30 @@ class BufferCore(object):
         """
         for key, data in self.s_data.iteritems():
             self.s_data[key].active = data.active.coalesce()
+            self.s_data[key].known = data.known.coalesce()
 
     def seg_crop(self, start=None, end=None):
         self.seg_coalesce()
         for key, data in self.s_data.iteritems():
-            c_seg = SegmentList()
+            ac_seg = SegmentList()
+            kc_seg = SegmentList()
             if end is None:
-                end = data.active[-1][-1]
+                end = data.known[-1][-1]
             if start is None:
-                start = data.active[0][0]
+                start = data.known[0][0]
             cropper = Segment(start, end)
-            for seg in data.active:
+            for a_seg in data.active:
                 try:
-                    temp = seg & cropper
-                    c_seg.append(temp)
+                    ac_seg.append(a_seg & cropper)
                 except ValueError:
                     pass
-            data.active = c_seg
+            for k_seg in data.known:
+                try:
+                    kc_seg.append(k_seg & cropper)
+                except ValueError:
+                    pass
+            data.active = ac_seg
+            data.known = kc_seg
 
     @property
     def s_segments(self):
@@ -380,7 +389,7 @@ class BufferCore(object):
         """
         try:
             return reduce(
-                operator.or_, (flag.active for flag in self.s_data.values()))
+                operator.or_, (flag.known for flag in self.s_data.values()))
         except TypeError:
             return SegmentList()
 

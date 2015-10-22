@@ -29,7 +29,7 @@ from time import sleep
 from gwpy.time import tconvert
 import operator as op
 from numbers import Number
-
+from ..inspector import ipsh
 from .. import version
 from ..log import Logger
 from . import (register_data_source, register_data_iterator)
@@ -244,6 +244,8 @@ class NDSDataIterator(NDSDataSource):
                 else:
                     for seg in val.active:
                         new_flags[key].active.append(seg)
+                    for seg in val.known:
+                        new_flags[key].known.append(seg)
 
             for buff, c in zip(ch_buffers, uchannels):
                 ts = TimeSeries.from_nds2_buffer(buff)
@@ -297,6 +299,7 @@ class NDSDataIterator(NDSDataSource):
         if (not new) & (not new_dq):
             self.logger.warning('No data were received')
             return self.data, self. s_data
+        epoch = None
         if new:
             epoch = new.values()[0].span[-1]  # todo: why [0] and not [-1]?
             self.logger.debug('%d seconds of data received up to epoch %s'
@@ -312,7 +315,9 @@ class NDSDataIterator(NDSDataSource):
                     .extent()[-1]
             self.seg_append(new_dq)
             if abs(self.s_segments) > self.duration:
-                self.seg_crop(start=epoch - self.duration)
+            # todo: understand why the int( is necessary, due to small errors in epoch?
+                print '%.15f' % epoch
+                self.seg_crop(start=int(epoch - self.duration))
         return self.data, self.s_data
 
     def fetch(self, *args, **kwargs):
@@ -345,7 +350,7 @@ class NDSDataIterator(NDSDataSource):
             cond = kwargs.get('condition', None)
             name = kwargs.get('name')
             prec = kwargs.get('precision', None)
-            dq_kwargs = {}
+            dq_kwargs = {'round': True}  # todo: add to config?
             if prec:
                     dq_kwargs['minlen'] = int(prec*sv.samplerate)
             if isinstance(name, (list, tuple)):
