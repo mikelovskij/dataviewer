@@ -216,6 +216,7 @@ class BNSRangeSpectrogramMonitor(TimeSeriesMonitor):
         self.stride = stride
         self.overlap = overlap
         self.olepoch = None
+        self.temp_epoch = None
         self.duration = kwargs['duration']
 
         # build monitor
@@ -306,7 +307,10 @@ class BNSRangeSpectrogramMonitor(TimeSeriesMonitor):
                 except:
                     self.logger.warning('Error in loading the picklefile, '
                                         'old spectrum will not be loaded')
-        self.olepoch = self.epoch
+        if self.temp_epoch:
+            self.olepoch = self.temp_epoch
+        else:  # todo: is this else (and the if) really necessary?
+            self.olepoch = self.epoch
         while int(new[self.channels[0]][0].span[-1]) >= int(
                         self.epoch + self.stride):
             # data buffer will return dict of 1-item lists, so reform to tsd
@@ -335,6 +339,7 @@ class BNSRangeSpectrogramMonitor(TimeSeriesMonitor):
                     picklehandle.close()
                     self.logger.debug('Pickle saved')
         self.epoch = self.data[self.channels[0]][-1].span[-1]
+        self.temp_epoch = self.olepoch
         return self.data
 
     def refresh(self):
