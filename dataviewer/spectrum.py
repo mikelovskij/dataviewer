@@ -392,7 +392,7 @@ class SpectrumMonitor(TimeSeriesMonitor):
         if len(lines) == 0:
             axes = cycle(self._fig.get_axes(self.AXES_CLASS.name))
             params = self.params['draw']
-            for i, channel in enumerate(self.spectra):
+            for i, channel in enumerate(self.channels):
                 ax = next(axes)
                 try:
                     pparams = dict((key, params[key][i]) for key in params if
