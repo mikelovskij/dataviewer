@@ -108,9 +108,8 @@ class SpectrogramBuffer(DataBuffer):
                 nyqidx = int(nyq / specgram.df.value)
                 specgram = specgram[:, :nyqidx]
             if channel in filters and filters[channel]:
-                specgram = specgram.filter(*filters[channel]).copy()
-            data[channel] = specgram
-
+                specgram = specgram.filter(*filters[channel])
+            data[channel] = specgram.copy()
         return data
 
 
@@ -244,6 +243,7 @@ class SpectrogramMonitor(TimeSeriesMonitor):
         while int(new[self.channels[0]][0].span[-1]) >=\
                 int(self.epoch + self.stride):
             # data buffer will return dict of 1-item lists, so reform to tsd
+            # TODO: am I sure that I have only 1 item lists?
             _new = TimeSeriesDict((key, val[0].crop(self.epoch, self.epoch +
                                                     self.stride))
                                   for key, val in new.iteritems())
@@ -294,9 +294,15 @@ class SpectrogramMonitor(TimeSeriesMonitor):
                 label = None
             # rescale all the colormaps to the last one plotted
             for co in ax.collections:
-                co.set_clim(coll.get_clim())
+                new_clim = coll.get_clim()
+                co.set_clim(new_clim)
+
             try:
-                coloraxes[i]
+                cbar_clim = coloraxes[i].get_clim()
+                if cbar_clim != new_clim:
+                    for cax in self._fig.colorbars:
+                        if cax == coloraxes[i]:
+                            cax.set_clim(new_clim)
             except IndexError:
                 cbparams = {}
                 for key, val in self.params['colorbar'].iteritems():
