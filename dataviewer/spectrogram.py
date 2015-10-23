@@ -165,6 +165,7 @@ class SpectrogramMonitor(TimeSeriesMonitor):
         self.stride = stride
         self.overlap = overlap
         self.olepoch = None
+        self.temp_epoch = None
         # build monitor
         kwargs.setdefault('yscale', 'log')
         kwargs.setdefault('gap', 'raise')
@@ -239,7 +240,10 @@ class SpectrogramMonitor(TimeSeriesMonitor):
         # be sure that the first cycle is syncronized with the buffer
         if not self.spectrograms.data:
             self.epoch = new[self.channels[0]][0].span[0]
-        self.olepoch = self.epoch
+        if self.temp_epoch:
+            self.olepoch = self.temp_epoch
+        else:
+            self.olepoch = self.epoch  # todo: is this if/else necessary?
         while int(new[self.channels[0]][0].span[-1]) >=\
                 int(self.epoch + self.stride):
             # data buffer will return dict of 1-item lists, so reform to tsd
@@ -263,6 +267,7 @@ class SpectrogramMonitor(TimeSeriesMonitor):
                         self.spectrograms.data[channel][i].ratio(
                             channel.ratio))
         self.epoch = self.data[self.channels[0]][-1].span[-1]
+        self.temp_epoch = self.epoch
         return self.data
 
     def refresh(self):
