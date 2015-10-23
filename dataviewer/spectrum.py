@@ -397,6 +397,7 @@ class SpectrumMonitor(TimeSeriesMonitor):
                 try:
                     pparams = dict((key, params[key][i]) for key in params if
                                    params[key][i])
+                    print pparams
                     ax.plot(self.spectra[channel], label=channel.label,
                             **pparams)
                 except ValueError as e:
