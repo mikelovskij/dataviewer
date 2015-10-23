@@ -391,13 +391,11 @@ class SpectrumMonitor(TimeSeriesMonitor):
         if len(lines) == 0:
             axes = cycle(self._fig.get_axes(self.AXES_CLASS.name))
             params = self.params['draw']
-            print params
             for i, channel in enumerate(self.channels):
                 ax = next(axes)
                 try:
                     pparams = dict((key, params[key][i]) for key in params if
                                    params[key][i])
-                    print pparams
                     ax.plot(self.spectra[channel], label=channel.label,
                             **pparams)
                 except ValueError as e:
