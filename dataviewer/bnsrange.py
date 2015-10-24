@@ -260,8 +260,12 @@ class BNSRangeSpectrogramMonitor(TimeSeriesMonitor):
         for n in range(len(self.plots)):
             _new_axes()
         self.set_params('init')
-        for ax in self._fig.get_axes(self.AXES_CLASS.name)[:-1]:
-            ax.set_xlabel('')
+        for i, ax in enumerate(self._fig.get_axes(self.AXES_CLASS.name)):
+            if i != (len(self._fig.get_axes(self.AXES_CLASS.name)) - 1):
+                ax.set_xlabel('')
+            if i != 0:
+                ax.set_title('')
+
         self.set_params('refresh')
         return self._fig
 
@@ -302,8 +306,22 @@ class BNSRangeSpectrogramMonitor(TimeSeriesMonitor):
                                   for key, val in new.iteritems())
             self.logger.debug('Calculating spectrogram from epoch {0}'
                               .format(self.epoch))
-            self.spectrograms.append(
-                self.spectrograms.from_timeseriesdict(_new, new_f))
+            try:
+                self.spectrograms.append(
+                    self.spectrograms.from_timeseriesdict(_new, new_f))
+            # This exception should happen only if data in picklefile has a
+            # different resolution from the one set in the config file
+            except ValueError as e:
+                if 'Spectrogram time resolutions do not match' in e.message:
+                    self.logger.warning(e.message)
+                    self.logger.warning(
+                        'Data in the pickle file will be dropped')
+                    self.spectrograms.data = OrderedDict()
+                    self.spectrograms.append(
+                        self.spectrograms.from_timeseriesdict(_new, new_f))
+                else:
+                    print 'Spectrogram time resolutions do not match' in e
+                    raise
             self.logger.debug('New stride appended')
             self.epoch += self.stride
             self.spectrograms.crop(self.epoch - self.duration)
@@ -367,6 +385,11 @@ class BNSRangeSpectrogramMonitor(TimeSeriesMonitor):
                             unit='Mpc', channel=rangesimeseriessquare.name)
                         coll = ax.plot(rangetimeseries, color='b',
                                        linewidth=3.0, marker='o')
+                    # add invisible colobar in order to have same xaxis
+                    if i not in self.coloraxes:
+                        self._fig.add_colorbar(ax=ax, visible=False)
+                        self.coloraxes[i] = self._fig.colorbars[-1]
+
                 elif plottype == "spectrogram":
                     # this part allows to replot only the last spectrogram
                     if len(ax.collections):
