@@ -19,8 +19,6 @@
 """DataMonitor for for BNS range.
 """
 
-from epics import PV
-
 import re
 from itertools import (cycle, izip_longest)
 
@@ -49,8 +47,6 @@ __all__ = ['BNSRangeSpectrogramMonitor']
 #
 # -----------------------------------------------------------------------------
 
-stateDQ = 1  # defines whether the data is meaningful or not (redefined below)
-
 
 class SpectrogramBuffer(DataBuffer):
     DictClass = OrderedDict
@@ -58,40 +54,22 @@ class SpectrogramBuffer(DataBuffer):
     ListClass = SpectrogramList
 
     def __init__(self, channels, stride=1, fftlength=1, overlap=0,
-                 method='welch', filter=None, cflags=None,
-                 fhigh=8000, flow=0, statechannel=list(), **kwargs):
+                 method='welch', filters=None, cflags=None,
+                 fhigh=8000, flow=0, **kwargs):
         super(SpectrogramBuffer, self).__init__(channels, **kwargs)
         self.method = method
         if 'window' in kwargs:
             self.window = {'window': kwargs.pop('window')}
         else:
             self.window = {}
-        # todo: maybe it is better to pass some of these kwargs as kwargs to ts.spectrogram
+        # todo: simplify the passing of kwargs to ts.spectrogram
         self.stride = self._param_dict(stride)
         self.fftlength = self._param_dict(fftlength)
         self.overlap = self._param_dict(overlap)
-        self.filter = self._param_dict(filter)
+        self.filters = self._param_dict(filters)
         self.fhigh = self._param_dict(fhigh)
         self.cflags = self._param_dict(cflags)
         self.flow = self._param_dict(flow)
-        # define state vector
-        global stateDQ
-        self.pv = None
-        if isinstance(statechannel, str):
-            statechannel = (statechannel,)
-        if len(statechannel) == 1:
-            self.pv = PV(statechannel[0])
-            stateDQ = self.pv.get()
-        elif len(statechannel) == 2:
-            statechannels = statechannel[0].split(",")
-            statecondition = statechannel[1].split(",")
-            self.pv = OrderedDict()
-            for cond, lockchanls in zip(statecondition, statechannels):
-                pvt = PV(lockchanls)
-                self.pv[pvt] = cond
-                stateDQ = stateDQ and eval(str(pvt.get()) + cond)
-        elif len(statechannel) > 2:
-            raise UserException("Unknown state channels/ conditions")
 
     def _param_dict(self, param):
         # format parameters
@@ -102,7 +80,7 @@ class SpectrogramBuffer(DataBuffer):
     def fetch(self, channels, start, end, **kwargs):
         # set params
         fftparams = dict()
-        for param in ['stride', 'fftlength', 'overlap', 'method', 'filter']:
+        for param in ['stride', 'fftlength', 'overlap', 'method', 'filters']:
             fftparams[param] = kwargs.pop(param, getattr(self, param))
         # get data
         tsd = super(SpectrogramBuffer, self).fetch(
@@ -126,49 +104,41 @@ class SpectrogramBuffer(DataBuffer):
         stride = self._param_dict(kwargs.pop('stride', self.stride))
         fftlength = self._param_dict(kwargs.pop('fftlength', self.fftlength))
         overlap = self._param_dict(kwargs.pop('overlap', self.overlap))
-        filter = self._param_dict(kwargs.pop('filter', self.filter))
+        filters = self._param_dict(kwargs.pop('filters', self.filters))
         fhigh = self._param_dict(kwargs.pop('fhigh', self.fhigh))
         flow = self._param_dict(kwargs.pop('flow', self.flow))
-
-        # calculate spectrograms only if state conditon(s) is satisfied
         data = self.DictClass()
-        global stateDQ
-        stateDQ = 1
-        if isinstance(self.pv, PV):
-            stateDQ = self.pv.get()
-        elif isinstance(self.pv, OrderedDict):
-            for pvt, cond in self.pv.iteritems():
-                stateDQ = stateDQ and eval(str(pvt.get()) + cond)
-        if stateDQ:
-            for channel, ts in zip(self.channels, tsd.values()):
-                if self.flag_check(ts, self.cflags.get(channel, None), fld):
-                    spec = ts.asd(fftlength=fftlength[channel],
-                                  overlap=overlap[channel],
-                                  method=self.method,
-                                  **self.window) \
-                        .crop(flow[channel], fhigh[channel])
-                    spec.epoch = ts.epoch
-                    self.logger.debug('TimeSeries span: {0},'
-                                      ' TimeSeries length: {1}, Stride: {2}'
-                                      .format(ts.span,
-                                              ts.span[-1] - ts.span[0],
-                                              stride[channel]))
-                    if hasattr(channel, 'resample') \
-                            and channel.resample is not None:
-                        nyq = float(channel.resample) / 2.
-                        nyqidx = int(nyq / spec.df.value)
-                        spec = spec[:nyqidx]
-                    if channel in filter and filter[channel]:
-                        self.logger.debug('Filtering ASD')
-                        spec = spec.filter(*filter[channel]).copy()
-                    self.logger.debug('Calculating insp. range psd')
-                    range_spec = inspiral_range_psd(spec ** 2)
-                    self.logger.debug('Insp. range psd calculated')
-                    ranges = (range_spec * range_spec.df) ** 0.5
-                    data[channel] = Spectrogram.from_spectra(
-                        ranges, epoch=spec.epoch, dt=self.stride[channel],
-                        frequencies=spec.frequencies)
-                    self.logger.debug('From_timeseries completed...')
+
+        for channel, ts in zip(self.channels, tsd.values()):
+            # calculate spectrograms only if state conditon(s) is satisfied
+            if self.flag_check(ts, self.cflags.get(channel, None), fld):
+                spec = ts.asd(fftlength=fftlength[channel],
+                              overlap=overlap[channel],
+                              method=self.method,
+                              **self.window) \
+                    .crop(flow[channel], fhigh[channel])
+                spec.epoch = ts.epoch
+                self.logger.debug('TimeSeries span: {0},'
+                                  ' TimeSeries length: {1}, Stride: {2}'
+                                  .format(ts.span,
+                                          ts.span[-1] - ts.span[0],
+                                          stride[channel]))
+                if hasattr(channel, 'resample') \
+                        and channel.resample is not None:
+                    nyq = float(channel.resample) / 2.
+                    nyqidx = int(nyq / spec.df.value)
+                    spec = spec[:nyqidx]
+                if channel in filters and filters[channel]:
+                    self.logger.debug('Filtering ASD')
+                    spec = spec.filter(*filters[channel]).copy()
+                self.logger.debug('Calculating insp. range psd')
+                range_spec = inspiral_range_psd(spec ** 2)
+                self.logger.debug('Insp. range psd calculated')
+                ranges = (range_spec * range_spec.df) ** 0.5
+                data[channel] = Spectrogram.from_spectra(
+                    ranges, epoch=spec.epoch, dt=self.stride[channel],
+                    frequencies=spec.frequencies)
+                self.logger.debug('From_timeseries completed...')
         return data
 
 
@@ -178,7 +148,8 @@ class SpectrogramIterator(SpectrogramBuffer):
                     self)._next()  # todo:  is this iterator even used?
         return self.from_timeseriesdict(
             new, method=self.method, stride=self.stride,
-            fftlength=self.fftlength, overlap=self.overlap, filter=self.filter)
+            fftlength=self.fftlength, overlap=self.overlap,
+            filters=self.filters)
 
 
 # -----------------------------------------------------------------------------
@@ -204,7 +175,7 @@ class BNSRangeSpectrogramMonitor(TimeSeriesMonitor):
         fftlength = kwargs.pop('fftlength', 1)
         overlap = kwargs.pop('overlap', 0)
         method = kwargs.pop('method', 'welch')
-        filter = kwargs.pop('filter', None)
+        filters = kwargs.pop('filters', kwargs.pop('filter', None))
         ratio = kwargs.pop('ratio', None)
         resample = kwargs.pop('resample', None)
         cflags = kwargs.pop('cflags', [])
@@ -212,7 +183,6 @@ class BNSRangeSpectrogramMonitor(TimeSeriesMonitor):
         flow = kwargs.pop('flow')
         fhigh = kwargs.pop('fhigh')
         picklefile = kwargs.pop('picklefile', None)
-        statechannel = kwargs.pop('statechannel', [])
         if kwargs['interval'] % stride:
             raise ValueError("%s interval must be exact multiple of the stride"
                              % type(self).__name__)
@@ -220,13 +190,12 @@ class BNSRangeSpectrogramMonitor(TimeSeriesMonitor):
         # build 'data' as SpectrogramBuffer
         self.spectrograms = SpectrogramIterator(
             channels, stride=stride, method=method, overlap=overlap,
-            fftlength=fftlength, flow=flow, fhigh=fhigh,
-            statechannel=statechannel)
-        if isinstance(filter, list):
-            self.spectrograms.filter = dict(zip(self.spectrograms.channels,
-                                                filter))
+            fftlength=fftlength, flow=flow, fhigh=fhigh)
+        if isinstance(filters, list):
+            self.spectrograms.filters = dict(zip(self.spectrograms.channels,
+                                             filters))
         else:
-            self.spectrograms.filter = filter
+            self.spectrograms.filters = filters
         self.spectrograms.cflags = dict(zip(self.spectrograms.channels,
                                             cflags))
         self.picklefile = picklefile
@@ -365,7 +334,6 @@ class BNSRangeSpectrogramMonitor(TimeSeriesMonitor):
         if self.data:
             # if self.data[self.channels[0]]:
             axes = cycle(self._fig.get_axes(self.AXES_CLASS.name))
-            coloraxes = self._fig.colorbars
             params = self.params['draw']
             # if only one channel given then proceed
             if len(self.data.keys()) == 1:
@@ -425,7 +393,7 @@ class BNSRangeSpectrogramMonitor(TimeSeriesMonitor):
                         if i not in self.coloraxes:
                             cbparams = {}
                             for key, val in self.params[
-                                'colorbar'].iteritems():
+                                    'colorbar'].iteritems():
                                 if not (isinstance(val, (list, tuple)) and
                                         isinstance(val[0], (
                                             list, tuple, basestring))):
@@ -433,7 +401,7 @@ class BNSRangeSpectrogramMonitor(TimeSeriesMonitor):
                                         key]
                                 else:
                                     cbparams[key] = \
-                                    self.params['colorbar'][key][i]
+                                        self.params['colorbar'][key][0]
                             try:
                                 self._fig.add_colorbar(mappable=coll,
                                                        ax=ax, **cbparams)
