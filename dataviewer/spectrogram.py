@@ -338,7 +338,8 @@ class SpectrogramMonitor(TimeSeriesMonitor):
                         self.coloraxes[i] = self._fig.colorbars[-1]
                     except Exception as e:
                         self.logger.error(str(e))
-                elif new_clim & (self.coloraxes[i].get_clim() != new_clim):
+                elif (new_clim is not None) and \
+                        (self.coloraxes[i].get_clim() != new_clim):
                     for cax in self._fig.colorbars:
                         if cax == self.coloraxes[i]:
                             cax.set_clim(new_clim)              
