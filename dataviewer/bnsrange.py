@@ -145,7 +145,7 @@ class SpectrogramBuffer(DataBuffer):
                     spec = ts.asd(fftlength=fftlength[channel],
                                   overlap=overlap[channel],
                                   method=self.method,
-                                  **self.window)\
+                                  **self.window) \
                         .crop(flow[channel], fhigh[channel])
                     spec.epoch = ts.epoch
                     self.logger.debug('TimeSeries span: {0},'
@@ -153,7 +153,7 @@ class SpectrogramBuffer(DataBuffer):
                                       .format(ts.span,
                                               ts.span[-1] - ts.span[0],
                                               stride[channel]))
-                    if hasattr(channel, 'resample')\
+                    if hasattr(channel, 'resample') \
                             and channel.resample is not None:
                         nyq = float(channel.resample) / 2.
                         nyqidx = int(nyq / spec.df.value)
@@ -174,7 +174,8 @@ class SpectrogramBuffer(DataBuffer):
 
 class SpectrogramIterator(SpectrogramBuffer):
     def _next(self):
-        new = super(SpectrogramIterator, self)._next()  #todo:  is this iterator even used?
+        new = super(SpectrogramIterator,
+                    self)._next()  # todo:  is this iterator even used?
         return self.from_timeseriesdict(
             new, method=self.method, stride=self.stride,
             fftlength=self.fftlength, overlap=self.overlap, filter=self.filter)
@@ -306,7 +307,7 @@ class BNSRangeSpectrogramMonitor(TimeSeriesMonitor):
                  'which is after the end of the last spectrogram(gps %d)'
                  ': a segment is missing and will be skipped!')
             self.logger.warning(s, new[self.channels[0]][0].span[0],
-                                         self.epoch)
+                                self.epoch)
             self.epoch = new[self.channels[0]][0].span[0]
 
         if not self.spectrograms.data:
@@ -416,27 +417,34 @@ class BNSRangeSpectrogramMonitor(TimeSeriesMonitor):
                         coll = ax.plot(spec.copy(), **pparams)
 
                     # rescale all the colormaps to the last one plotted
+                    new_clim = None
                     for co in ax.collections:
-                        co.set_clim(coll.get_clim())
-
-                    # set colorbar
-                    if coll and i not in self.coloraxes:
-                        cbparams = {}
-                        for key, val in self.params['colorbar']\
-                                .iteritems():
-                            if not (isinstance(val, (list, tuple)) and
-                                    isinstance(val[0], (list, tuple,
-                                                        basestring))):
-                                cbparams[key] = self.params['colorbar'][key]
-                            else:
-                                cbparams[key] = self.params['colorbar'][key][i]
-                        try:
-                            self._fig.add_colorbar(mappable=coll,
-                                                   ax=ax, **cbparams)
-                            self.coloraxes[i] = self._fig.colorbars[-1]
-                        except Exception as e:
-                            self.logger.error(str(e))
-            k = 0  # for resizing plots to look better
+                        new_clim = coll.get_clim()
+                        co.set_clim(new_clim)
+                    if coll:
+                        if i not in self.coloraxes:
+                            cbparams = {}
+                            for key, val in self.params[
+                                'colorbar'].iteritems():
+                                if not (isinstance(val, (list, tuple)) and
+                                        isinstance(val[0], (
+                                            list, tuple, basestring))):
+                                    cbparams[key] = self.params['colorbar'][
+                                        key]
+                                else:
+                                    cbparams[key] = \
+                                    self.params['colorbar'][key][i]
+                            try:
+                                self._fig.add_colorbar(mappable=coll,
+                                                       ax=ax, **cbparams)
+                                self.coloraxes[i] = self._fig.colorbars[-1]
+                            except Exception as e:
+                                self.logger.error(str(e))
+                        elif (new_clim is not None) and \
+                                (self.coloraxes[i].get_clim() != new_clim):
+                            for cax in self._fig.colorbars:
+                                if cax == self.coloraxes[i]:
+                                    cax.set_clim(new_clim)
             for ax in self._fig.get_axes(self.AXES_CLASS.name):
                 if not k:
                     l, b, w, h = ax.get_position().bounds

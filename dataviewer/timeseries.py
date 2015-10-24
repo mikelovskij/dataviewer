@@ -171,6 +171,8 @@ class TimeSeriesMonitor(DataMonitor):
                                           fetch=False):
                     if self.flag_check(t2, self.cflags.get(channel, None),
                                        self.f_data):
+                        self.logger.debug(ts.unit)
+                        self.logger.debug(t2.unit)
                         ts.append(t2, pad=self.buffer.pad, gap=self.buffer.gap)
                         line.set_xdata(ts.times.value)
                         line.set_ydata(ts.value)
