@@ -122,8 +122,8 @@ class SpectrogramBuffer(DataBuffer):
                     nyqidx = int(nyq / specgram.df.value)
                     specgram = specgram[:, :nyqidx]
                 if channel in filters and filters[channel]:
-                    specgram = specgram.filter(*filters[channel]).copy()
-                data[channel] = specgram
+                    specgram = specgram.filter(*filters[channel])
+                data[channel] = specgram.copy()
         return data
 
 
@@ -182,6 +182,7 @@ class SpectrogramMonitor(TimeSeriesMonitor):
         self.stride = stride
         self.overlap = overlap
         self.olepoch = None
+        self.temp_epoch = None
         # build monitor
         kwargs.setdefault('yscale', 'log')
         kwargs.setdefault('gap', 'raise')
@@ -256,10 +257,14 @@ class SpectrogramMonitor(TimeSeriesMonitor):
         # be sure that the first cycle is syncronized with the buffer
         if not self.spectrograms.data:
             self.epoch = new[self.channels[0]][0].span[0]
-        self.olepoch = self.epoch
+        if self.temp_epoch:
+            self.olepoch = self.temp_epoch
+        else:
+            self.olepoch = self.epoch  # todo: is this if/else necessary?
         while int(new[self.channels[0]][0].span[-1]) >=\
                 int(self.epoch + self.stride):
             # data buffer will return dict of 1-item lists, so reform to tsd
+            # TODO: am I sure that I have only 1 item lists?
             _new = TimeSeriesDict((key, val[0].crop(self.epoch, self.epoch +
                                                     self.stride))
                                   for key, val in new.iteritems())
@@ -283,6 +288,7 @@ class SpectrogramMonitor(TimeSeriesMonitor):
                     self.data[channel][i] = (
                         self.spectrograms.data[channel][i].ratio(
                             channel.ratio))
+        self.temp_epoch = self.epoch
         return self.data
 
     def refresh(self):
@@ -313,8 +319,10 @@ class SpectrogramMonitor(TimeSeriesMonitor):
                 coll = ax.plot(spec, label=label, **pparams)
                 label = None
             # rescale all the colormaps to the last one plotted
+            new_clim = None
             for co in ax.collections:
-                co.set_clim(coll.get_clim())
+                new_clim = coll.get_clim()
+                co.set_clim(new_clim)
             if coll:
                 if i not in self.coloraxes:
                     cbparams = {}
@@ -330,6 +338,12 @@ class SpectrogramMonitor(TimeSeriesMonitor):
                         self.coloraxes[i] = self._fig.colorbars[-1]
                     except Exception as e:
                         self.logger.error(str(e))
+                elif new_clim & (self.coloraxes[i].get_clim() != new_clim):
+                    for cax in self._fig.colorbars:
+                        if cax == self.coloraxes[i]:
+                            cax.set_clim(new_clim)              
+                    
+                    
         for ax in self._fig.get_axes(self.AXES_CLASS.name):
             ax.relim()
             ax.autoscale_view(scalex=False)

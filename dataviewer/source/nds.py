@@ -227,8 +227,8 @@ class NDSDataIterator(NDSDataSource):
                         % (att, self.attempts))
                     self.logger.warning('Next attempt in minimum %d seconds' %
                                         wait_time)
-                    self.restart()
                     sleep(wait_time - tconvert('now') % wait_time)
+                    self.restart()
                     continue
                 else:
                     self.logger.critical(
