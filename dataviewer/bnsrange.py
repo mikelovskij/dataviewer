@@ -445,6 +445,7 @@ class BNSRangeSpectrogramMonitor(TimeSeriesMonitor):
                             for cax in self._fig.colorbars:
                                 if cax == self.coloraxes[i]:
                                     cax.set_clim(new_clim)
+            k = None
             for ax in self._fig.get_axes(self.AXES_CLASS.name):
                 if not k:
                     l, b, w, h = ax.get_position().bounds
