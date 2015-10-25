@@ -118,11 +118,10 @@ class SpectrogramBuffer(DataBuffer):
                               **self.window) \
                     .crop(flow[channel], fhigh[channel])
                 spec.epoch = ts.epoch
-                self.logger.debug('TimeSeries span: {0},'
-                                  ' TimeSeries length: {1}, Stride: {2}'
-                                  .format(ts.span,
-                                          ts.span[-1] - ts.span[0],
-                                          stride[channel]))
+                self.logger.debug('TimeSeries span: %d,'
+                                  ' TimeSeries length: %d, Stride: %d',
+                                  ts.span, ts.span[-1] - ts.span[0],
+                                  stride[channel])
                 if hasattr(channel, 'resample') \
                         and channel.resample is not None:
                     nyq = float(channel.resample) / 2.
@@ -144,10 +143,10 @@ class SpectrogramBuffer(DataBuffer):
 
 class SpectrogramIterator(SpectrogramBuffer):
     def _next(self):
-        new = super(SpectrogramIterator,
-                    self)._next()  # todo:  is this iterator even used?
+        new, new_f = super(SpectrogramIterator, self)._next()
+        # todo:  is this iterator even used?
         return self.from_timeseriesdict(
-            new, method=self.method, stride=self.stride,
+            new, new_f, method=self.method, stride=self.stride,
             fftlength=self.fftlength, overlap=self.overlap,
             filters=self.filters)
 
@@ -257,7 +256,7 @@ class BNSRangeSpectrogramMonitor(TimeSeriesMonitor):
             ax.set_xlim(float(self.epoch - self.duration), float(self.epoch))
             return ax
 
-        for n in range(len(self.plots)):
+        for _ in range(len(self.plots)):
             _new_axes()
         self.set_params('init')
         for i, ax in enumerate(self._fig.get_axes(self.AXES_CLASS.name)):
@@ -304,8 +303,8 @@ class BNSRangeSpectrogramMonitor(TimeSeriesMonitor):
             _new = TimeSeriesDict((key, val[0].crop(self.epoch, self.epoch +
                                                     self.stride))
                                   for key, val in new.iteritems())
-            self.logger.debug('Calculating spectrogram from epoch {0}'
-                              .format(self.epoch))
+            self.logger.debug('Calculating spectrogram from epoch %d',
+                              self.epoch)
             try:
                 self.spectrograms.append(
                     self.spectrograms.from_timeseriesdict(_new, new_f))

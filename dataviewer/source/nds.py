@@ -179,10 +179,6 @@ class NDSDataIterator(NDSDataSource):
         try:
             self.iterator = self.connection.iterate(
                 self.ndsstride, self._unique_channel_names(self.allchannels))
-            # if hasattr(self, 'flags'):
-            #     self.flag_iterator = self.connection.iterate(
-            #         self.ndsstride,
-            #         self._unique_channel_names(self.flags.keys()))
         except RuntimeError as e:
             if e.message == 'Invalid channel name':
                 self.logger.error('Invalid channel name %s' % str(
