@@ -189,27 +189,26 @@ def from_ini(filepath, ifo=None):
                 refpath = val
             else:
                 rparamsi[param] = val
-            try:
-                if os.path.isdir(refpath):
-                    # Section is a directory:
-                    # import all references in folder (assumes 'dat' format)
-                    for f in os.listdir(refpath):
-                        if os.path.splitext(f)[1] in ['.txt', '.dat', '.gz']:
-                            refpath += f
-                            rparamsi.setdefault(
-                                'label', os.path.basename(refpath).split('.')
-                                [0].replace('_', r' '))
-                            rparams[refpath] = rparamsi
+        try:
+            if os.path.isdir(refpath):
+                # Section is a directory:
+                # import all references in folder (assumes 'dat' format)
+                for f in os.listdir(refpath):
+                    if os.path.splitext(f)[1] in ['.txt', '.dat', '.gz']:
+                        refpath_f = refpath + '/' + f
+                        rparamsi['label'] = os.path.basename(refpath_f).split(
+                            '.')[0].replace('_', r' ')
+                        rparams[refpath_f] = rparamsi.copy()
 
-                else:
-                    rparamsi.setdefault(
-                        'label', os.path.basename(refpath).split('.')[0]
-                            .replace('_', r' '))
-                    rparams[refpath] = rparamsi
-            except NameError:
-                raise ValueError('Cannot load reference {0} plot if no '
-                                 'parameter "path" is defined'
-                                 .format(reference))
+            else:
+                rparamsi.setdefault(
+                    'label', os.path.basename(refpath).split('.')[0]
+                        .replace('_', r' '))
+                rparams[refpath] = rparamsi
+        except NameError:
+            raise ValueError('Cannot load reference {0} plot if no '
+                             'parameter "path" is defined'
+                             .format(reference))
 
     # get combination parameters # IN PROGRESS
     combparams = OrderedDict()
