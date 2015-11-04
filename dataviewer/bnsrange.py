@@ -118,10 +118,6 @@ class SpectrogramBuffer(DataBuffer):
                               **self.window) \
                     .crop(flow[channel], fhigh[channel])
                 spec.epoch = ts.epoch
-                self.logger.debug('TimeSeries span: %d,'
-                                  ' TimeSeries length: %d, Stride: %d',
-                                  ts.span, ts.span[-1] - ts.span[0],
-                                  stride[channel])
                 if hasattr(channel, 'resample') \
                         and channel.resample is not None:
                     nyq = float(channel.resample) / 2.
