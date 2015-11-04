@@ -194,7 +194,8 @@ def from_ini(filepath, ifo=None):
                 # Section is a directory:
                 # import all references in folder (assumes 'dat' format)
                 for f in os.listdir(refpath):
-                    if os.path.splitext(f)[1] in ['.txt', '.dat', '.gz']:
+                    if os.path.splitext(f)[1] in ['.txt', '.dat', '.gz',
+                                                  '.hdf5', '.csv']:
                         refpath_f = refpath + '/' + f
                         rparamsi['label'] = os.path.basename(refpath_f).split(
                             '.')[0].replace('_', r' ')
