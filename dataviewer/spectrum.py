@@ -145,6 +145,38 @@ class SpectrumMonitor(TimeSeriesMonitor):
             raise ValueError('Invalid reference syntax.')
 
     def add_combination(self, combs):
+        """
+        Adds combinations between channels or references to the plot.
+
+        combs: `basestring`, `dict`, `tuple`, `list`
+                Combination, can be expressed as:
+                -'basestring' : directly represents a combination, e.g.:
+                    'C0 + R1' represents the sum between the first plotted
+                    channel and the second reference spectra.
+                -'dict' : dictionary with `basestring` as keys and
+                    a `basestring` or another `dict` as values. If a value is a
+                    `basestring`, it will be considered the combination string
+                    and its key will be used as label. If a value is a `dict`,
+                    the key will be used instead as the combination string,
+                    while the dictionary parameters will be parsed by the
+                    parseparams function and used as plotting parameters for
+                    the combination.
+                - 'tuple' : tuple. The tuple will be interpreted differently
+                    depending on its length and content. If the tuple has two
+                    elements and its first element is a `basestring` and the
+                    second element is a `basestring` too, the first element
+                    will be considered the label of the combination while the
+                    second, the combination string itself. If the tuple has two
+                    elements and its first element is a `basestring` but the
+                    second element is a dictionary, the first element will be
+                    used as the combination string while the dictionary will be
+                    parsed by the parseparam function and added to the
+                    combination plotting parameters.
+                    If the tuple has a number of elements different from two
+                    (or has two but the first is not a `basestring`), each
+                    element of the tuple will be evaluated independently, as
+                    long as it fits one of the cases explained above.
+        """
 
         # parse combinations
         if combs is None:
