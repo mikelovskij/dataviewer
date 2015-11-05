@@ -112,18 +112,20 @@ class SpectrumMonitor(TimeSeriesMonitor):
 
         Arguments
         ---------
-        refs: `Spectrum`, `dict`, `tuple`, `list`
+        ref: `Spectrum`, `dict`, `tuple`, `list`
             Reference spectra. Can be:
-            -`Spectrum`: one single reference spectrum, label taken
-            from name and needs to be unique
+            -`Spectrum`: one single reference spectrum, its label is taken
+            from its .name attribute and needs to be unique.
             -'dict': keys must be the path of the files containing the spectra,
             values must be dictionaries containing plot arguments, e.g.
-                refs = {'/path/to/file':{'label':'somelabel', ...}, ...}
-            -'tuple': first element must be `Spectrum` object, second must be
-             dictionary containing plot arguments, e.g.
-                refs = ((refspectrum, {'color': 'r'}), ...)
-            -'list`: each element can be a `Spectrum` or a tuple following the
-            format outlined above.
+                ref = {'/path/to/file':{'label':'somelabel', ...}, ...}
+            -'tuple': Each element of the tuple has to be a valid argument for
+            this method, i.e. a dict or a Spectrum object like the ones
+            outlined above e.g.:
+                ref = ((refspectrum, {'color': 'r'}), ...)
+            -'list`: treated the same as a tuple argument.
+        **refparams: dictionary containing additional reference arguments, used
+         only if ref is a Spectrum object.
         """
         if isinstance(ref, Spectrum):
             refparams.setdefault('label', ref.name)
