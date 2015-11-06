@@ -19,9 +19,7 @@
 
 """Start a new monitor using the GWpy DataViewer toolkit.
 
-Monitors should be configured in INI-format, see the package documention at
-
-https://gwpy.github.io/dataviewer/
+Monitors should be configured in INI-format.
 
 for details.
 """
