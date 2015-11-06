@@ -20,8 +20,6 @@
 """Start a new monitor using the GWpy DataViewer toolkit.
 
 Monitors should be configured in INI-format.
-
-for details.
 """
 
 from argparse import ArgumentParser
